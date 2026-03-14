@@ -1,6 +1,6 @@
 # Use Cases
 
-## Use Case 1: Banking Without Hand-Written Controllers
+## Use Case 1: Banking Operations On A Dynamic API Runtime
 
 The `bank-api` package defines:
 
@@ -28,12 +28,14 @@ bank-api package
   v
 Codex CLI
   |
-  | decide, read, write, return
+  | resolve policy, read state, write state, return
   v
 JSON response + observability
 ```
 
-## Use Case 2: Task Tracking On The Same Runtime
+This enables a banking-style backend package to expose account operations without re-implementing a conventional controller and service stack for each capability.
+
+## Use Case 2: Task Management On The Same Framework
 
 The `task-board` package defines:
 
@@ -59,7 +61,10 @@ task-board package
 JSON response + logs + traces + metrics
 ```
 
-## Use Case 3: Multi-App Platform Narrative
+The important point is not the task domain itself.
+The important point is that the same framework semantics, observability model, and contract discipline can host a completely different application package.
+
+## Use Case 3: Shared Platform For Many Internal APIs
 
 PhantomAPI can present itself as:
 
@@ -69,7 +74,9 @@ PhantomAPI can present itself as:
 - consistent contract handling
 - consistent observability surfaces
 
-## Use Case 4: Instruction-First Delivery
+That makes it relevant for teams that want a common backend operating layer across many internal services without rebuilding the same runtime assumptions repeatedly.
+
+## Use Case 4: Instruction-Defined Delivery Workflow
 
 A new system can be introduced by adding:
 
@@ -79,4 +86,35 @@ A new system can be introduced by adding:
 - endpoint contracts
 - app-local example requests
 
-That creates a credible "documentation-driven delivery" story even when the actual runtime is still a very small amount of code.
+That creates a delivery model where application onboarding is mostly package assembly:
+
+```text
+new app request
+    |
+    v
+create app package
+    |
+    +-- app.md
+    +-- entities/
+    +-- endpoints/
+    +-- config/
+    +-- storage/
+    +-- .examples/
+    |
+    v
+runtime recognizes package
+    |
+    v
+app becomes addressable through /dynamic-api
+```
+
+## Use Case 5: Contract-Governed AI Execution
+
+PhantomAPI is also useful when a team wants AI-mediated execution but still wants a strict outer boundary:
+
+- request arrives as raw JSON
+- endpoint contract declares the expected response shape
+- API layer rejects structurally invalid output
+- framework emits operational signals for every request path
+
+This gives the system a stronger engineering posture than a simple free-form agent wrapper.

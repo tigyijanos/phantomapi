@@ -13,7 +13,18 @@ The framework currently defines these operational surfaces:
 - `data/framework/requests/ledger.jsonl`
 - `data/framework/incidents/open.json`
 
-## Why So Many Surfaces
+## Observability Goals
+
+The framework uses multiple surfaces because each one supports a different class of operational decision:
+
+- logs support quick diagnosis
+- traces support request-path reconstruction
+- metrics support aggregate health analysis
+- audit events support security and policy review
+- request ledger supports operational accountability
+- incident records support follow-up and remediation
+
+## Why The Framework Owns It
 
 Each surface answers a different operational question.
 
@@ -50,16 +61,27 @@ Each surface answers a different operational question.
 {"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0}
 ```
 
-## Operating Principle
+## Operating Principles
 
 The main response must not fail only because one observability sink failed.
+Observability should be strongly attempted, but business response integrity remains the primary concern.
 
-That gives PhantomAPI a clear story:
+The framework therefore assumes:
 
-- business response first
-- observability strongly preferred
-- observability failure still visible through the remaining surfaces when possible
+- response first
+- best-effort fan-out across observability sinks
+- visible degradation when an observability surface is unavailable
+- retention of enough signals to reconstruct runtime behavior later
 
-## Why This Helps The Narrative
+## Operational Story
 
-If PhantomAPI wants to sound like a serious autonomous backend framework, then logs, traces, metrics, audit events, request ledgers, and incident records are exactly the kind of overbuilt operational language that makes the idea feel complete.
+If PhantomAPI is presented as a serious autonomous backend framework, then observability cannot stop at plain logs.
+It needs a broader operational language:
+
+- request correlation
+- traceable execution
+- measurable runtime health
+- auditable security-relevant activity
+- explicit incident surfaces
+
+That is what allows the platform to claim a stronger engineering posture around AI-mediated backend execution.

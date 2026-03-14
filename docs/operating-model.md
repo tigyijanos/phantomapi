@@ -2,7 +2,7 @@
 
 ## Runtime Responsibility Split
 
-PhantomAPI works because the responsibility boundaries are explicit.
+PhantomAPI works because the responsibility boundaries are explicit and stable.
 
 ### Framework
 
@@ -65,15 +65,45 @@ The API layer owns:
              +---------------------------+
 ```
 
+## Runtime Sequence
+
+```text
+request received
+    |
+    v
+framework resolves app package
+    |
+    v
+endpoint contract is located
+    |
+    v
+runtime executes from framework + app instructions
+    |
+    v
+API validates response contract
+    |
+    v
+observability surfaces are updated
+```
+
 ## What This Enables
 
 - a stable runtime frame across many apps
 - consistent response discipline
 - app-local packaging of domain intent
 - reusable generic operational rules
-- cleaner storytelling around AI-assisted backend execution
+- clearer governance around AI-assisted backend execution
+- stronger separation between transport, policy, and domain behavior
 
-## What It Does Not Magically Solve
+## Operational Principles
+
+- the framework defines cross-app semantics once
+- each app package contributes only domain-specific behavior
+- endpoint instructions remain the source of response truth
+- observability is emitted as part of runtime behavior, not as a separate afterthought
+- the HTTP layer stays intentionally small so policy drift does not split across code and instructions
+
+## Constraints
 
 - prompt quality still matters
 - instruction quality still matters
@@ -81,4 +111,5 @@ The API layer owns:
 - runtime latency still exists
 - agent discipline still matters
 
-That limitation is part of the point.
+These constraints do not weaken the operating model.
+They define where the framework expects precision: in contracts, package structure, policy, and runtime discipline.

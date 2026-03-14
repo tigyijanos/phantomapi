@@ -2,108 +2,147 @@
 
 # PhantomAPI
 
-**Documentation-Driven, AI-Supported, Autonomous Backend Framework**
+**Documentation-Driven, AI-Native, Autonomous Backend Framework**
 
-PhantomAPI is a documentation-native backend runtime for people who want to act like the instruction layer is the product, the framework, the platform, the operating model, and the orchestration brain all at once.
+PhantomAPI is an instruction-defined backend platform for teams that want to externalize application behavior, operational policy, and interface contracts into a structured documentation layer.
 
-There is still one real HTTP endpoint.
-There is still a real runtime.
-There is still real state.
-But the behavioral center of gravity is intentionally moved into instructions, app packages, contracts, and operational conventions.
+The runtime stays intentionally thin.
+The framework surface stays explicit.
+The application model stays package-oriented.
+The orchestration intelligence lives where the platform expects it to live: in the instruction system.
 
 ## Elevator Pitch
 
-PhantomAPI presents itself as:
+PhantomAPI positions itself as:
 
-- a documentation-driven backend platform
+- a documentation-native backend platform
 - an instruction-first application framework
-- a multi-app autonomous runtime
+- a multi-app autonomous execution runtime
 - a contract-disciplined AI orchestration layer
-- an observability-aware agent backend fabric
+- an observability-rich backend operating model
+- a dynamic API surface for agent-mediated software systems
 
-If the framework is explicit, the app package is coherent, and the contracts are disciplined, the runtime should be able to do the rest.
+The core premise is simple:
+define the framework precisely, package each application coherently, enforce contracts aggressively, and let the runtime execute from that declared system of truth.
+
+## Why Teams Look At It
+
+- collapse behavioral intent, policies, and interface expectations into a single package model
+- reduce controller and service sprawl behind a stable gateway surface
+- standardize how apps expose contracts, storage rules, and operational posture
+- enable one runtime to host many distinct application packages
+- make observability, governance, and response discipline part of the framework itself
+
+## Core Value Proposition
+
+```text
+Traditional backend:
+code defines behavior, docs explain after the fact
+
+PhantomAPI:
+instructions define behavior, runtime executes, contracts verify
+```
 
 ## Core Architecture
 
 ```text
-                +-----------------------------------------+
-Client JSON --->| POST /dynamic-api                       |
-                +-------------------+---------------------+
-                                    |
-                                    v
-                +-----------------------------------------+
-                | PhantomAPI Framework                    |
-                | engine + governance + contracts         |
-                | capabilities + observability + errors   |
-                +-------------------+---------------------+
-                                    |
-                             app + endpoint routing
-                                    |
-                                    v
-                +-----------------------------------------+
-                | App Package                              |
-                | app.md + entities + endpoints           |
-                | storage + config + .examples            |
-                +-------------------+---------------------+
-                                    |
-                                    v
-                +-----------------------------------------+
-                | Codex CLI Runtime                        |
-                | reads docs, resolves state, performs    |
-                | writes, emits observability, returns    |
-                +-------------------+---------------------+
-                                    |
-                                    v
-                +-----------------------------------------+
-                | JSON response + logs + traces + metrics |
-                | + audit + request ledger + incidents    |
-                +-----------------------------------------+
+Client JSON
+    |
+    v
++---------------------------+
+| POST /dynamic-api         |
+| raw request ingress       |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| PhantomAPI Framework      |
+| engine + governance       |
+| contracts + observability |
++-------------+-------------+
+              |
+      app + endpoint routing
+              |
+              v
++---------------------------+
+| App Package               |
+| app + entities + rules    |
+| endpoints + storage       |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Codex CLI Runtime         |
+| resolve, decide, act      |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| JSON response             |
+| logs + traces + metrics   |
+| audit + request ledger    |
++---------------------------+
 ```
 
-## What The Framework Actually Owns
+## Platform Claims
 
-The framework layer is no longer just a few generic notes.
-It now defines a more serious runtime envelope:
+PhantomAPI is designed to look and behave like a real backend platform:
 
-- engine boot order
-- app-package convention
-- feature catalog
-- capability model
-- contract discipline
-- request governance
-- generic security posture
-- rate-limit interpretation
-- observability surfaces
-- reliability and safe repair posture
-- framework error policy
+- one gateway surface
+- one framework operating model
+- many application packages
+- explicit contract ownership
+- explicit storage interpretation
+- explicit runtime governance
+- explicit observability outputs
+- explicit error semantics
 
-Framework instruction files live under [instructions/framework](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/instructions/framework).
+The platform does not hide where its behavior comes from.
+It formalizes that behavior in a framework layer and expects apps to plug into it.
 
-## Feature Surface
+Framework instruction files live under `instructions/framework`.
 
-PhantomAPI now advertises a more robust base framework feature list:
+## Framework Capabilities
+
+The framework currently defines:
 
 - multi-app routing through `app` plus `endpoint`
 - app capability manifests
 - framework-level routing failure contracts
 - endpoint-owned response contracts
-- contract-shaped failures
+- strict output validation at the API boundary
 - endpoint-level authentication and authorization rules
 - app-local rate-limit policies
-- app-local example requests for input-shape guidance
 - correlation-id aware request handling
+- idempotency-key preservation conventions
+- request-governance and error-policy rules
 - request-ledger output
 - audit event output
 - logs, traces, metrics, and incident surfaces
-- safe recovery and repair conventions
+- recovery and repair conventions
 - explicit write discipline around state mutation
+- capability-driven package interpretation
+- framework-owned operational vocabulary
 
-This is the important split:
+## Reliability And Governance Posture
+
+PhantomAPI is documented and presented as a resilient runtime surface, not a loose automation wrapper.
+
+- contract validation at the API boundary
+- framework-owned routing failure contracts
+- correlation-id aware request processing
+- app-scoped rate-limit interpretation
+- app-scoped storage and write discipline
+- audit and ledger outputs for operational review
+- repair and incident conventions for degraded paths
+- reusable generic security semantics across all apps
+
+## Responsibility Model
 
 ```text
-Framework owns: how the runtime behaves
-App owns:       what the software does
-API owns:       transport + contract guard
+Framework owns: runtime behavior and operational policy
+App owns:       domain behavior and response contracts
+API owns:       transport and output guardrails
 ```
 
 ## Multi-App Model
@@ -122,18 +161,30 @@ PhantomAPI is organized as:
 Current app packages:
 
 - `bank-api`
-  authentication, balance query, deposit, withdrawal, transfer
+  authentication, balance query, deposit, withdrawal, transfer, account state handling
 - `task-board`
-  authentication, task listing, task creation
+  authentication, task listing, task creation, task lifecycle handling
 
 App-local example requests live with the package itself:
 
 - `instructions/apps/bank-api/.examples/*.json`
 - `instructions/apps/task-board/.examples/*.json`
 
-## Observability Story
+## Request Lifecycle
 
-The framework now defines a broader observability surface than before:
+```text
+1. Client submits raw JSON with app and endpoint
+2. API forwards request body unchanged to the runtime path
+3. Framework resolves the target package and endpoint contract
+4. Codex CLI reads the framework and app instructions
+5. Runtime resolves state, applies policy, and performs the operation
+6. API validates the output against the endpoint contract
+7. Response and operational signals are emitted together
+```
+
+## Observability Model
+
+The framework defines a first-class operational surface:
 
 - `data/framework/logs/agent.log`
 - `data/framework/traces/events.jsonl`
@@ -160,29 +211,36 @@ Representative outputs:
 {"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0}
 ```
 
-## Why This Is Entertainingly Serious
+## Engineering Positioning
 
-PhantomAPI is useful as:
+PhantomAPI is built to communicate the traits engineering teams usually expect from a serious runtime platform:
 
-- a documentation-first backend experiment
-- a satire of AI-native software delivery language
-- a testbed for instruction-driven app packaging
-- a platform narrative for autonomous backend orchestration
+- strong contract discipline
+- explicit operational governance
+- package-based application composition
+- centralized observability surfaces
+- reusable framework semantics across many apps
+- dynamic AI-supported backend execution
 
-It is trying to sound like a serious category while fully exposing how much of the system is held together by instruction quality and runtime discipline.
+That combination makes it suitable for:
+
+- rapid backend prototyping with package-level structure
+- internal platform programs around AI-mediated runtime execution
+- instruction-driven service packaging
+- dynamic API systems with explicit contracts and observable operations
 
 ## Additional Docs
 
-- [docs/positioning.md](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/docs/positioning.md)
-  platform-style framing and narrative
-- [docs/use-cases.md](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/docs/use-cases.md)
-  use cases and ASCII flow charts
-- [docs/operating-model.md](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/docs/operating-model.md)
-  responsibility split and runtime model
-- [docs/framework-features.md](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/docs/framework-features.md)
-  expanded base feature catalog
-- [docs/observability.md](C:/Users/tigyi/Documents/GitHub/temp/PhantomAPI/docs/observability.md)
-  observability model, event shapes, and operational surfaces
+- `docs/positioning.md`
+  product framing, differentiation, and platform thesis
+- `docs/use-cases.md`
+  delivery patterns and system examples
+- `docs/operating-model.md`
+  runtime ownership and lifecycle model
+- `docs/framework-features.md`
+  full framework capability surface
+- `docs/observability.md`
+  logging, tracing, metrics, audit, and incident model
 
 ## Configuration
 
@@ -208,3 +266,5 @@ Invoke-RestMethod -Method Post -Uri http://localhost:5000/dynamic-api `
   -ContentType "application/json" `
   -Body (Get-Content instructions/apps/bank-api/.examples/login.json -Raw)
 ```
+
+<sub>PhantomAPI was also created to explore documentation-centric AI system design as a serious engineering medium. That secondary goal does not change the framework model described above.</sub>

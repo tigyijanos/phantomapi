@@ -2,7 +2,7 @@
 
 ## Base Framework Feature Catalog
 
-PhantomAPI now defines a more complete base-framework envelope than a simple "engine + a few rules" setup.
+PhantomAPI defines a full framework envelope rather than a minimal wrapper around a CLI.
 
 ### Routing And Packaging
 
@@ -20,6 +20,7 @@ PhantomAPI now defines a more complete base-framework envelope than a simple "en
 - exact property-set expectation
 - contract-shaped errors
 - no hidden response expansion
+- explicit response ownership at endpoint scope
 
 ### Security And Governance
 
@@ -29,6 +30,8 @@ PhantomAPI now defines a more complete base-framework envelope than a simple "en
 - correlation-id handling
 - idempotency-key preservation when present
 - dry-run convention when explicitly supported
+- framework-owned error semantics
+- stable request-governance vocabulary
 
 ### Operational Safety
 
@@ -36,6 +39,8 @@ PhantomAPI now defines a more complete base-framework envelope than a simple "en
 - app-local storage interpretation
 - controlled recovery and repair rules
 - incident recording when safe recovery is not possible
+- bounded framework behavior for routing failures
+- explicit separation between generic and app-specific rules
 
 ### Observability
 
@@ -45,6 +50,15 @@ PhantomAPI now defines a more complete base-framework envelope than a simple "en
 - audit events
 - request ledger
 - incident surface
+
+### Extensibility
+
+- multi-app package model
+- app-local capabilities
+- app-local rate limits
+- app-local entity system
+- app-local storage contract
+- framework-level conventions that remain reusable across domains
 
 ## ASCII Feature Stack
 
@@ -62,5 +76,5 @@ PhantomAPI
 
 ## Why This Matters
 
-Without these framework features, the runtime is just a vague "agent reads some files" story.
-With them, the system starts to look like a real instruction-native platform with named operational guarantees and a repeatable app model.
+Without these framework features, the runtime collapses into a generic agent wrapper.
+With them, it becomes a repeatable instruction-native platform with named guarantees, reusable conventions, and a clear application packaging model.
