@@ -1,0 +1,5 @@
+{
+  "app": "task-board",
+  "endpoint": "tasks/list",
+  "token": "replace-after-login"
+}

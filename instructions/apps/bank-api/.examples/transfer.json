@@ -1,0 +1,7 @@
+{
+  "app": "bank-api",
+  "endpoint": "bank/transfer",
+  "token": "replace-after-login",
+  "targetAccountNumber": "HU100000000000000000000002",
+  "amount": 200
+}

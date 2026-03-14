@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "userId": 10,
+      "fullName": "Taylor Example",
+      "email": "taylor@tasks.test",
+      "password": "tasks123",
+      "isActive": true
+    }
+  ],
+  "sessions": [],
+  "tasks": [
+    {
+      "taskId": 100,
+      "title": "Prepare backlog",
+      "description": "Collect the next iteration items.",
+      "status": "open",
+      "ownerUserId": 10,
+      "createdAt": "2026-03-14T09:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "app": "task-board",
+  "endpoint": "tasks/create",
+  "token": "replace-after-login",
+  "title": "Write status report",
+  "description": "Summarize the current sprint progress."
+}

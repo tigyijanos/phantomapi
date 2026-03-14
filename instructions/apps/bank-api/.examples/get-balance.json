@@ -1,0 +1,5 @@
+{
+  "app": "bank-api",
+  "endpoint": "bank/get-balance",
+  "token": "replace-after-login"
+}

@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "currency": "HUF",
+    "minimumBalance": 0,
+    "maximumBalance": 1000000
+  },
+  "users": [
+    {
+      "userId": 1,
+      "fullName": "Ada Lovelace",
+      "email": "ada@phantom.test",
+      "password": "ada123",
+      "isActive": true,
+      "isFrozen": false,
+      "accountNumber": "HU100000000000000000000001"
+    },
+    {
+      "userId": 2,
+      "fullName": "Grace Hopper",
+      "email": "grace@phantom.test",
+      "password": "grace123",
+      "isActive": true,
+      "isFrozen": false,
+      "accountNumber": "HU100000000000000000000002"
+    }
+  ],
+  "accounts": [
+    {
+      "accountNumber": "HU100000000000000000000001",
+      "ownerUserId": 1,
+      "currency": "HUF",
+      "balance": 1500,
+      "status": "active"
+    },
+    {
+      "accountNumber": "HU100000000000000000000002",
+      "ownerUserId": 2,
+      "currency": "HUF",
+      "balance": 900,
+      "status": "active"
+    }
+  ],
+  "sessions": [],
+  "transactions": []
+}

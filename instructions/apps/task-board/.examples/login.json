@@ -1,0 +1,6 @@
+{
+  "app": "task-board",
+  "endpoint": "auth/login",
+  "email": "taylor@tasks.test",
+  "password": "tasks123"
+}

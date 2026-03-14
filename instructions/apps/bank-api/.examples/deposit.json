@@ -1,0 +1,6 @@
+{
+  "app": "bank-api",
+  "endpoint": "bank/deposit",
+  "token": "replace-after-login",
+  "amount": 200
+}

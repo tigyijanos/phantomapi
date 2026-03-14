@@ -1,0 +1,6 @@
+{
+  "app": "bank-api",
+  "endpoint": "auth/login",
+  "email": "ada@phantom.test",
+  "password": "ada123"
+}
