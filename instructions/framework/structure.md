@@ -4,6 +4,7 @@ PhantomAPI is organized as a framework plus multiple apps.
 
 Framework folder:
 
+- `instructions/framework/authority.md`
 - `instructions/framework/engine.md`
 - `instructions/framework/structure.md`
 - `instructions/framework/app-package.md`
@@ -35,6 +36,7 @@ App folder shape:
 
 How to interpret this structure:
 
+- authority files define how strictly the runtime must treat the instruction system itself
 - framework files describe cross-app behavior and conventions
 - app files describe a specific software product
 - entity files explain domain types and app-level rules attached to those types
