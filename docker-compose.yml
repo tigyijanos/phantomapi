@@ -13,4 +13,5 @@ services:
       - ./data:/app/data
       - ./instructions:/app/instructions
       - ./AGENTS.md:/app/AGENTS.md
+      - ./.codex:/root/.codex
     restart: unless-stopped

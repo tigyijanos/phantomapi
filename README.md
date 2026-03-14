@@ -363,7 +363,62 @@ Environment variables:
 - `Phantom__CliTimeoutSeconds`
   default is `300`
 
-## Quick Start
+## Running With Docker Compose
+
+The repository now includes [docker-compose.yml](docker-compose.yml), so the default containerized startup path is:
+
+```powershell
+docker compose up --build -d
+```
+
+Useful follow-up commands:
+
+```powershell
+docker compose ps
+docker compose logs -f
+docker compose down
+```
+
+Runtime endpoint:
+
+- `http://localhost:8080/dynamic-api`
+
+Compose persistence mounts:
+
+- `./data -> /app/data`
+- `./instructions -> /app/instructions`
+- `./AGENTS.md -> /app/AGENTS.md`
+- `./.codex -> /root/.codex`
+
+This means state, observability output, instruction changes, and Codex authentication survive container restarts and rebuilds.
+
+## Authenticating Codex Inside The Container
+
+The API service can start without Codex authentication, but request execution will fail until the `codex` CLI inside the container is logged in.
+
+Preferred headless ChatGPT login:
+
+```powershell
+docker exec -it phantomapi codex login --device-auth
+docker exec phantomapi codex login status
+```
+
+API key login:
+
+```powershell
+$env:OPENAI_API_KEY="sk-..."
+docker exec -e OPENAI_API_KEY=$env:OPENAI_API_KEY phantomapi sh -lc "printenv OPENAI_API_KEY | codex login --with-api-key"
+docker exec phantomapi codex login status
+```
+
+Auth persistence location:
+
+- inside the container: `/root/.codex`
+- on the host through compose: `./.codex`
+
+Because `./.codex` is ignored by git, the container can persist Codex credentials locally without committing them to the repository.
+
+## Local Quick Start
 
 ```bash
 dotnet run
