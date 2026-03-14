@@ -12,3 +12,5 @@ Reliability rules:
 - if safe repair is performed, record that repair in traces and incidents
 - framework-owned observability surfaces are lower risk to repair than authoritative app business state
 - reconstructible runtime artifacts may be normalized when the app explicitly allows it
+- instruction repair is reliable only when the change is reversible, validated, and narrower than the diagnosed defect
+- never leave the instruction system in a half-patched state

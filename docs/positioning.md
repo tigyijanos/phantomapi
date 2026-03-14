@@ -28,6 +28,7 @@ If this project had a product page, the claims would sound like this:
 - multi-app instruction framework
 - observability-aware AI backend platform
 - dynamic API operating layer for package-defined systems
+- self-governing instruction runtime with repair loops
 
 ## Platform Narrative
 
@@ -73,6 +74,7 @@ PhantomAPI is designed to support claims like:
 - standardize contracts, policy, and observability at the framework layer
 - reduce implementation drag behind a stable API ingress model
 - provide a production-minded operating frame for AI-mediated backend execution
+- allow governed refinement of the instruction system itself
 
 The language is ambitious because the framework surface is explicit.
 PhantomAPI is not positioned as a loose collection of prompts.

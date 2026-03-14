@@ -11,6 +11,7 @@ Governance rules:
 - if an endpoint or app explicitly supports dry-run behavior and the request asks for it, evaluate without mutating state
 - never perform hidden side effects that are not justified by endpoint rules and storage rules
 - if state mutation is attempted, write observability outputs that make the attempt traceable
+- if instruction mutation is attempted, write observability outputs that make the diagnosis, patch, validation, and rollback traceable
 
 Write-discipline rules:
 
@@ -18,3 +19,4 @@ Write-discipline rules:
 - validate the request shape before state mutation
 - persist state before claiming success
 - if persistence fails, return a contract-shaped failure and record the incident
+- capture rollback information before writing instruction changes

@@ -12,6 +12,10 @@ The framework currently defines these operational surfaces:
 - `data/framework/audit/security.jsonl`
 - `data/framework/requests/ledger.jsonl`
 - `data/framework/incidents/open.json`
+- `data/framework/self-healing/diagnoses.jsonl`
+- `data/framework/self-healing/patches.jsonl`
+- `data/framework/self-healing/validations.jsonl`
+- `data/framework/self-healing/rollbacks.jsonl`
 
 ## Observability Goals
 
@@ -24,6 +28,7 @@ The framework uses multiple surfaces because each one supports a different class
 - request ledger supports operational accountability
 - incident records support follow-up and remediation
 - repair signals support recovery analysis
+- self-healing journals support instruction-evolution analysis
 
 ## Why The Framework Owns It
 
@@ -59,7 +64,7 @@ Each surface answers a different operational question.
 ### Metrics Snapshot
 
 ```json
-{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0,"repairAttempts":1,"repairSuccesses":1,"repairFailures":0}
+{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0,"repairAttempts":1,"repairSuccesses":1,"repairFailures":0,"instructionRepairAttempts":1,"instructionRepairSuccesses":1,"instructionRepairFailures":0,"validationLoopFailures":0,"rollbackCount":0}
 ```
 
 ## Operating Principles
@@ -84,5 +89,6 @@ It needs a broader operational language:
 - measurable runtime health
 - auditable security-relevant activity
 - explicit incident surfaces
+- explicit instruction mutation journals
 
 That is what allows the platform to claim a stronger engineering posture around AI-mediated backend execution.

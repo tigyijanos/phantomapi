@@ -18,3 +18,4 @@ Package rules:
 - endpoint-specific security belongs in the endpoint file
 - app packages should describe where their runtime state lives under `data/apps/<app>`
 - when an app supports self-healing, the safe repair rules should live under `storage/*.md`
+- when an app supports autonomous instruction repair, the mutation scope should be declared under `config/*.md`

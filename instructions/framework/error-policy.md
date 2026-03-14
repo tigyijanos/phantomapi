@@ -14,6 +14,9 @@ Failure classes:
 - observability failure
 - recovery failure
 - repair-blocked failure
+- instruction failure
+- validation-loop failure
+- rollback failure
 
 Error policy rules:
 
@@ -23,3 +26,4 @@ Error policy rules:
 - do not leak secrets or internal stack traces in response payloads
 - if an internal failure prevents a safe business response, return the best contract-shaped error available and record the event in logs, traces, and incidents when applicable
 - if self-healing was attempted and failed, record that explicitly and do not continue with speculative business output
+- if instruction repair is attempted, validation and rollback outcomes are part of the failure classification story

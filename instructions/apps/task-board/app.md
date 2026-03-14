@@ -8,6 +8,7 @@ App identity:
 - storage model: local JSON state
 - state path: `data/apps/task-board/state.json`
 - repair policy: `instructions/apps/task-board/storage/repair-policy.md`
+- self-healing profile: `instructions/apps/task-board/config/self-healing.md`
 - public endpoint: `auth/login`
 - example requests: `instructions/apps/task-board/.examples/*.json`
 

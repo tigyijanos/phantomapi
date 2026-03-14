@@ -18,4 +18,5 @@ Capability rules:
 - capability files describe support, not state
 - capabilities never override endpoint rules or response contracts
 - capabilities help route interpretation and operational expectations
+- capabilities may advertise whether autonomous instruction repair is allowed and how narrow it should stay
 - if an app does not define a capability file, the runtime should continue, but assume less and read more of the app package directly

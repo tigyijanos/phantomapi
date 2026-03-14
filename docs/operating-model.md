@@ -27,6 +27,7 @@ Each app package owns:
 - endpoint-level security
 - storage interpretation
 - repair policy for reconstructible state
+- self-healing mutation scope
 - app-local rate limits
 - app-local example requests
 
@@ -80,6 +81,8 @@ endpoint contract is located
     v
 runtime executes from framework + app instructions
     |
+    +-- if needed: diagnose + patch + validate + retry
+    |
     v
 API validates response contract
     |
@@ -103,6 +106,7 @@ observability surfaces are updated
 - endpoint instructions remain the source of response truth
 - observability is emitted as part of runtime behavior, not as a separate afterthought
 - the HTTP layer stays intentionally small so policy drift does not split across code and instructions
+- autonomous instruction repair is governed by explicit mutation, validation, and rollback rules
 
 ## Constraints
 

@@ -121,6 +121,7 @@ The framework currently defines:
 - logs, traces, metrics, and incident surfaces
 - recovery and repair conventions
 - instruction-defined self-healing with explicit repair boundaries
+- autonomous instruction repair with validation and rollback
 - explicit write discipline around state mutation
 - capability-driven package interpretation
 - framework-owned operational vocabulary
@@ -138,6 +139,7 @@ PhantomAPI is documented and presented as a resilient runtime surface, not a loo
 - repair and incident conventions for degraded paths
 - reusable generic security semantics across all apps
 - app-scoped repair policies for safe recovery only
+- governed mutation of the instruction system itself
 
 ## Responsibility Model
 
@@ -194,6 +196,10 @@ The framework defines a first-class operational surface:
 - `data/framework/audit/security.jsonl`
 - `data/framework/requests/ledger.jsonl`
 - `data/framework/incidents/open.json`
+- `data/framework/self-healing/diagnoses.jsonl`
+- `data/framework/self-healing/patches.jsonl`
+- `data/framework/self-healing/validations.jsonl`
+- `data/framework/self-healing/rollbacks.jsonl`
 
 Representative outputs:
 
@@ -210,7 +216,7 @@ Representative outputs:
 ```
 
 ```json
-{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0,"repairAttempts":1,"repairSuccesses":1,"repairFailures":0}
+{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0,"repairAttempts":1,"repairSuccesses":1,"repairFailures":0,"instructionRepairAttempts":1,"instructionRepairSuccesses":1,"instructionRepairFailures":0,"validationLoopFailures":0,"rollbackCount":0}
 ```
 
 ## Engineering Positioning
@@ -221,7 +227,7 @@ PhantomAPI is built to communicate the traits engineering teams usually expect f
 - explicit operational governance
 - package-based application composition
 - centralized observability surfaces
-- bounded self-healing rather than speculative recovery
+- governed self-healing and instruction evolution
 - reusable framework semantics across many apps
 - dynamic AI-supported backend execution
 
@@ -244,6 +250,8 @@ That combination makes it suitable for:
   full framework capability surface
 - `docs/observability.md`
   logging, tracing, metrics, audit, and incident model
+- `docs/self-healing.md`
+  autonomous repair, validation, rollback, and mutation governance model
 
 ## Configuration
 

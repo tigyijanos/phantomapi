@@ -19,6 +19,9 @@ Framework folder:
 - `instructions/framework/observability.md`
 - `instructions/framework/reliability.md`
 - `instructions/framework/self-healing.md`
+- `instructions/framework/change-governance.md`
+- `instructions/framework/validation-loop.md`
+- `instructions/framework/rollback-policy.md`
 - `instructions/framework/errors/*.md`
 
 App folder shape:
@@ -38,5 +41,5 @@ How to interpret this structure:
 - endpoint files explain request handling, endpoint-level security, and the response contract
 - storage files explain where real state lives and how it may be changed
 - storage repair policy files explain which repairs are safe and which state is authoritative
-- config files hold app options such as rate limits and capabilities
+- config files hold app options such as rate limits, capabilities, and self-healing scope
 - example files are request examples local to one app and should stay next to that app

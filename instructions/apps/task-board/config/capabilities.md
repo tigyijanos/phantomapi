@@ -9,5 +9,7 @@ Declared capabilities for `task-board`:
 - local-json-state
 - self-healing-aware-storage
 - safe-session-repair
+- autonomous-instruction-repair
+- localized-hot-path-patches
 - rate-limited-endpoints
 - audit-worthy-security-events

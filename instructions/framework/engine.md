@@ -25,14 +25,18 @@ Framework loading order:
 9. Read `instructions/framework/error-policy.md`.
 10. Read `instructions/framework/reliability.md`.
 11. Read `instructions/framework/self-healing.md`.
-12. Read `instructions/framework/observability.md`.
-13. Read the other generic framework files that apply to every request.
-14. Resolve the selected app under `instructions/apps/<app>`.
-15. Read the app definition file.
-16. Read the selected endpoint file inside that app.
-17. Read the app capability file if it exists.
-18. Read only the app-specific entity, storage, rate-limit, repair-policy, examples, and other files needed for that endpoint.
-19. Produce the final JSON response that matches the selected response contract exactly.
+12. Read `instructions/framework/change-governance.md`.
+13. Read `instructions/framework/validation-loop.md`.
+14. Read `instructions/framework/rollback-policy.md`.
+15. Read `instructions/framework/observability.md`.
+16. Read the other generic framework files that apply to every request.
+17. Resolve the selected app under `instructions/apps/<app>`.
+18. Read the app definition file.
+19. Read the selected endpoint file inside that app.
+20. Read the app capability file if it exists.
+21. Read the app self-healing file if it exists.
+22. Read only the app-specific entity, storage, rate-limit, repair-policy, self-healing, examples, and other files needed for that endpoint.
+23. Produce the final JSON response that matches the selected response contract exactly.
 
 Framework rules:
 
@@ -44,6 +48,7 @@ Framework rules:
 - example request files may clarify intended request shapes, but they never override endpoint contracts or state
 - app capability files help the runtime understand what the app supports before loading deeper context
 - self-healing is allowed only through framework rules and app-declared repair policies
+- autonomous instruction repair is allowed only through framework governance, validation, and rollback rules
 - if the requested app does not exist, use the framework app-not-found error contract
 - if the app exists but the endpoint does not, use the framework endpoint-not-found error contract
 - never invent application state that is not supported by the selected app's storage

@@ -118,3 +118,26 @@ PhantomAPI is also useful when a team wants AI-mediated execution but still want
 - framework emits operational signals for every request path
 
 This gives the system a stronger engineering posture than a simple free-form agent wrapper.
+
+## Use Case 6: Autonomous Instruction Repair
+
+PhantomAPI can also treat defects in the instruction package as first-class runtime issues:
+
+```text
+request fails
+    |
+    v
+diagnosis identifies instruction drift
+    |
+    v
+minimal patch is applied
+    |
+    v
+validation loop runs
+    |
+    +-- success ----------> request retried once
+    |
+    +-- failure ----------> rollback + incident
+```
+
+This is the point where PhantomAPI stops behaving like a thin agent wrapper and starts behaving like a self-governing backend framework.

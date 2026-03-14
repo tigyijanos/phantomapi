@@ -8,6 +8,7 @@ App identity:
 - storage model: local JSON state
 - state path: `data/apps/bank-api/state.json`
 - repair policy: `instructions/apps/bank-api/storage/repair-policy.md`
+- self-healing profile: `instructions/apps/bank-api/config/self-healing.md`
 - currency: `HUF`
 - account model: one bank account per user
 - public endpoint: `auth/login`
