@@ -1,0 +1,16 @@
+services:
+  phantomapi:
+    build:
+      context: .
+    container_name: phantomapi
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      Phantom__CliCommand: codex
+      Phantom__CliTimeoutSeconds: 300
+    volumes:
+      - ./data:/app/data
+      - ./instructions:/app/instructions
+      - ./AGENTS.md:/app/AGENTS.md
+    restart: unless-stopped
