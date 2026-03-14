@@ -14,6 +14,7 @@ Core framework features:
 - explicit observability outputs
 - safe state mutation discipline
 - controlled recovery and repair behavior
+- self-healing with explicit repair boundaries
 - app-local examples for request-shape guidance
 - capability-driven app discovery
 - instruction-first runtime orchestration
@@ -26,6 +27,7 @@ Advanced framework features:
 - metrics counters for runtime health
 - trace events for request flow visibility
 - incident recording when safe recovery is not possible
+- repair-attempt metrics and incident visibility
 - app capability manifests that describe what an app supports
 - optional dry-run and idempotency conventions when an endpoint or app explicitly supports them
 

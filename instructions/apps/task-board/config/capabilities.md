@@ -7,5 +7,7 @@ Declared capabilities for `task-board`:
 - task-listing
 - task-creation
 - local-json-state
+- self-healing-aware-storage
+- safe-session-repair
 - rate-limited-endpoints
 - audit-worthy-security-events

@@ -38,6 +38,7 @@ PhantomAPI defines a full framework envelope rather than a minimal wrapper aroun
 - safe write discipline
 - app-local storage interpretation
 - controlled recovery and repair rules
+- instruction-defined self-healing boundaries
 - incident recording when safe recovery is not possible
 - bounded framework behavior for routing failures
 - explicit separation between generic and app-specific rules
@@ -50,6 +51,7 @@ PhantomAPI defines a full framework envelope rather than a minimal wrapper aroun
 - audit events
 - request ledger
 - incident surface
+- repair attempt visibility
 
 ### Extensibility
 
@@ -58,6 +60,7 @@ PhantomAPI defines a full framework envelope rather than a minimal wrapper aroun
 - app-local rate limits
 - app-local entity system
 - app-local storage contract
+- app-local repair policy
 - framework-level conventions that remain reusable across domains
 
 ## ASCII Feature Stack

@@ -7,6 +7,7 @@ App identity:
 - app id: `task-board`
 - storage model: local JSON state
 - state path: `data/apps/task-board/state.json`
+- repair policy: `instructions/apps/task-board/storage/repair-policy.md`
 - public endpoint: `auth/login`
 - example requests: `instructions/apps/task-board/.examples/*.json`
 

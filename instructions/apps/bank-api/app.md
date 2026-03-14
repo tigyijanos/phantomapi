@@ -7,6 +7,7 @@ App identity:
 - app id: `bank-api`
 - storage model: local JSON state
 - state path: `data/apps/bank-api/state.json`
+- repair policy: `instructions/apps/bank-api/storage/repair-policy.md`
 - currency: `HUF`
 - account model: one bank account per user
 - public endpoint: `auth/login`

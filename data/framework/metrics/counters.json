@@ -4,5 +4,8 @@
   "failedRequests": 0,
   "rateLimitFailures": 0,
   "authFailures": 0,
-  "storageFailures": 0
+  "storageFailures": 0,
+  "repairAttempts": 0,
+  "repairSuccesses": 0,
+  "repairFailures": 0
 }

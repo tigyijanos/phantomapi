@@ -23,6 +23,7 @@ The framework uses multiple surfaces because each one supports a different class
 - audit events support security and policy review
 - request ledger supports operational accountability
 - incident records support follow-up and remediation
+- repair signals support recovery analysis
 
 ## Why The Framework Owns It
 
@@ -58,7 +59,7 @@ Each surface answers a different operational question.
 ### Metrics Snapshot
 
 ```json
-{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0}
+{"totalRequests":6,"successfulRequests":5,"failedRequests":1,"rateLimitFailures":0,"authFailures":0,"storageFailures":0,"repairAttempts":1,"repairSuccesses":1,"repairFailures":0}
 ```
 
 ## Operating Principles

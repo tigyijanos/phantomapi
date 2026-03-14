@@ -12,6 +12,7 @@ Storage rules:
 
 - read the current file before deciding on a stateful operation
 - keep the JSON valid after every write
+- if a storage anomaly is detected, read `instructions/apps/task-board/storage/repair-policy.md`
 - on successful login, persist a new session
 - on successful task creation, append the new task
 - on failed requests, do not mutate state

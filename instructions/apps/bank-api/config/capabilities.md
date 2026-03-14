@@ -9,6 +9,8 @@ Declared capabilities for `bank-api`:
 - withdrawal
 - transfer
 - local-json-state
+- self-healing-aware-storage
+- safe-session-repair
 - rate-limited-endpoints
 - audit-worthy-security-events
 - traceable-money-movement

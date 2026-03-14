@@ -18,6 +18,7 @@ Framework folder:
 - `instructions/framework/rate-limits.md`
 - `instructions/framework/observability.md`
 - `instructions/framework/reliability.md`
+- `instructions/framework/self-healing.md`
 - `instructions/framework/errors/*.md`
 
 App folder shape:
@@ -36,5 +37,6 @@ How to interpret this structure:
 - entity files explain domain types and app-level rules attached to those types
 - endpoint files explain request handling, endpoint-level security, and the response contract
 - storage files explain where real state lives and how it may be changed
+- storage repair policy files explain which repairs are safe and which state is authoritative
 - config files hold app options such as rate limits and capabilities
 - example files are request examples local to one app and should stay next to that app

@@ -10,7 +10,7 @@ Capability file purpose:
 
 - declare what the app can do
 - advertise the storage mode
-- signal whether the app supports authentication, money movement, task creation, dry runs, transfers, or other domain-specific behaviors
+- signal whether the app supports authentication, money movement, task creation, dry runs, transfers, self-healing profiles, or other domain-specific behaviors
 - reduce unnecessary file reading by letting the runtime understand the app shape early
 
 Capability rules:

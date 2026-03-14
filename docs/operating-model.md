@@ -26,6 +26,7 @@ Each app package owns:
 - endpoint behavior
 - endpoint-level security
 - storage interpretation
+- repair policy for reconstructible state
 - app-local rate limits
 - app-local example requests
 

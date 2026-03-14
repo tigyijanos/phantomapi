@@ -23,13 +23,16 @@ Framework loading order:
 7. Read `instructions/framework/capability-model.md`.
 8. Read `instructions/framework/request-governance.md`.
 9. Read `instructions/framework/error-policy.md`.
-10. Read the other generic framework files that apply to every request.
-11. Resolve the selected app under `instructions/apps/<app>`.
-12. Read the app definition file.
-13. Read the selected endpoint file inside that app.
-14. Read the app capability file if it exists.
-15. Read only the app-specific entity, storage, rate-limit, examples, and other files needed for that endpoint.
-16. Produce the final JSON response that matches the selected response contract exactly.
+10. Read `instructions/framework/reliability.md`.
+11. Read `instructions/framework/self-healing.md`.
+12. Read `instructions/framework/observability.md`.
+13. Read the other generic framework files that apply to every request.
+14. Resolve the selected app under `instructions/apps/<app>`.
+15. Read the app definition file.
+16. Read the selected endpoint file inside that app.
+17. Read the app capability file if it exists.
+18. Read only the app-specific entity, storage, rate-limit, repair-policy, examples, and other files needed for that endpoint.
+19. Produce the final JSON response that matches the selected response contract exactly.
 
 Framework rules:
 
@@ -40,6 +43,7 @@ Framework rules:
 - endpoint-specific authentication and authorization rules belong to that endpoint
 - example request files may clarify intended request shapes, but they never override endpoint contracts or state
 - app capability files help the runtime understand what the app supports before loading deeper context
+- self-healing is allowed only through framework rules and app-declared repair policies
 - if the requested app does not exist, use the framework app-not-found error contract
 - if the app exists but the endpoint does not, use the framework endpoint-not-found error contract
 - never invent application state that is not supported by the selected app's storage
