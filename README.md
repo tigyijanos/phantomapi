@@ -4,12 +4,53 @@
 
 **Documentation-Driven, AI-Native, Autonomous Backend Framework**
 
+*A backend framework where the documentation finally becomes the runtime.*
+
 PhantomAPI is an instruction-defined backend platform for teams that want to externalize application behavior, operational policy, and interface contracts into a structured documentation layer.
 
 The runtime stays intentionally thin.
 The framework surface stays explicit.
 The application model stays package-oriented.
 The orchestration intelligence lives where the platform expects it to live: in the instruction system.
+
+## Vision
+
+Modern backend engineering suffers from a fundamental problem:
+
+developers keep writing code.
+
+PhantomAPI explores a radically different direction.
+
+Instead of implementing behavior in code and documenting it later,
+PhantomAPI promotes a model where the documentation becomes the system of record
+and the runtime simply interprets that declared intent.
+
+The result is a platform where backend logic can evolve at the speed of documentation updates,
+and where the boundary between specification and execution becomes pleasantly blurry.
+
+In PhantomAPI, the documentation is not an explanation of the system.
+
+It is the system.
+
+## Industry Context
+
+The software industry is currently experiencing a significant shift toward AI-mediated systems.
+
+Developers are experimenting with:
+
+- agent-assisted development
+- autonomous execution runtimes
+- instruction-driven platforms
+- documentation-as-code models
+- dynamic system orchestration
+
+PhantomAPI exists somewhere in the middle of that movement.
+
+Possibly slightly ahead of it.
+
+Or slightly beside it.
+
+Time will tell.
 
 ## Elevator Pitch
 
@@ -42,6 +83,20 @@ code defines behavior, docs explain after the fact
 PhantomAPI:
 instructions define behavior, runtime executes, contracts verify
 ```
+
+## Strategic Promise
+
+If traditional backend platforms separate specification from execution,
+PhantomAPI deliberately collapses the two.
+
+Documentation becomes the primary artifact.
+
+The runtime simply respects it.
+
+In theory this allows backend systems to be defined, evolved,
+and governed entirely through structured instruction layers.
+
+In practice it also makes for an interesting engineering experiment.
 
 ## Core Architecture
 
@@ -101,6 +156,24 @@ The platform does not hide where its behavior comes from.
 It formalizes that behavior in a framework layer and expects apps to plug into it.
 
 Framework instruction files live under `instructions/framework`.
+
+## Architectural Philosophy
+
+PhantomAPI follows a simple architectural principle:
+
+if a system can be precisely described,
+it can probably be executed.
+
+The framework therefore focuses on:
+
+- strong documentation discipline
+- strict contract ownership
+- observable runtime decisions
+- explicit operational policy
+
+The implementation layer is intentionally minimal.
+
+The instructions carry the weight.
 
 ## Framework Capabilities
 
@@ -238,6 +311,30 @@ That combination makes it suitable for:
 - instruction-driven service packaging
 - dynamic API systems with explicit contracts and observable operations
 
+## System Summary
+
+PhantomAPI currently provides:
+
+- one Minimal API ingress that forwards raw JSON requests directly to the CLI runtime
+- framework-level routing through `app` and `endpoint`
+- app-packaged domain systems under `instructions/apps/<app>`
+- endpoint-owned response contracts with hard output validation
+- entity, storage, rate-limit, capability, and self-healing instruction layers
+- app-local state under `data/apps/<app>`
+- framework-owned observability surfaces for logs, traces, metrics, audit, request ledger, incidents, and self-healing journals
+- data repair rules for reconstructible runtime state
+- governed instruction repair for framework and app instruction defects
+- validation and rollback loops for autonomous instruction changes
+- multi-app runtime behavior with shared governance and shared operational language
+
+Key platform characteristics:
+
+- observability is first-class and multi-surface
+- self-healing applies both to operational data and to the instruction system itself
+- contract discipline stays enforced at the API boundary
+- the runtime is thin, but the framework surface is intentionally heavy
+- overall confidence posture: probably will work as expected, and if not, it should leave enough evidence to explain why
+
 ## Additional Docs
 
 - `docs/positioning.md`
@@ -252,6 +349,8 @@ That combination makes it suitable for:
   logging, tracing, metrics, audit, and incident model
 - `docs/self-healing.md`
   autonomous repair, validation, rollback, and mutation governance model
+- `docs/system-summary.md`
+  consolidated feature summary for future positioning and narrative work
 
 ## Configuration
 
@@ -278,4 +377,22 @@ Invoke-RestMethod -Method Post -Uri http://localhost:5000/dynamic-api `
   -Body (Get-Content instructions/apps/bank-api/.examples/login.json -Raw)
 ```
 
-<sub>PhantomAPI was also created to explore documentation-centric AI system design as a serious engineering medium. That secondary goal does not change the framework model described above.</sub>
+---
+
+## Status
+
+PhantomAPI is currently classified as:
+
+**strategically experimental but architecturally inevitable**
+
+<sub>PhantomAPI was also created to explore documentation-centric AI system design as a serious engineering discipline.</sub>
+
+<sub>This secondary research objective does not affect the framework model described above.</sub>
+
+<sub>The framework remains fully enterprise-ready in theory.</sub>
+
+## Disclaimer
+
+No backend engineers were harmed in the development of this framework.
+
+Several may become unnecessary.
