@@ -43,6 +43,17 @@ PhantomAPI defines a full framework envelope rather than a minimal wrapper aroun
 - incident recording when safe recovery is not possible
 - bounded framework behavior for routing failures
 - explicit separation between generic and app-specific rules
+- startup warm orchestration that can stay cache-only for write endpoints
+
+### Runtime Acceleration
+
+- eager warm app-server startup
+- compiled instruction-bundle cache per route
+- endpoint contract cache per route
+- derived output-schema cache per route
+- persistent `codex exec resume` session pool
+- endpoint frontmatter warm declarations through `warmStart`, `warmupRequest`, and `readOnlyWarmup`
+- explicit separation between cache warmup and real readonly exec-session warmup
 
 ### Observability
 
@@ -73,6 +84,7 @@ PhantomAPI
   |
   +-- Routing
   +-- Contracts
+  +-- Warm Runtime
   +-- Governance
   +-- Security
   +-- Reliability

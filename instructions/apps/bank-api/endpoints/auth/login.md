@@ -1,3 +1,9 @@
+---
+warmStart: cache-only
+warmupRequest: .examples/login.json
+readOnlyWarmup: false
+---
+
 # Endpoint: auth/login
 
 This endpoint authenticates a user and returns a new session token.

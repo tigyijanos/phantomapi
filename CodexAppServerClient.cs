@@ -116,6 +116,31 @@ sealed class CodexAppServerClient : IAsyncDisposable
         return await responseTask;
     }
 
+    public async Task PrimeAsync(RuntimeProfile profile, string correlationId, CancellationToken cancellationToken)
+    {
+        await _startupGate.WaitAsync(cancellationToken);
+        try
+        {
+            await TraceStepAsync(
+                correlationId,
+                "framework",
+                "warm-start",
+                "appserver.eager-startup",
+                () => StartIfNeededAsync(correlationId, "framework", "warm-start", cancellationToken),
+                new()
+                {
+                    ["mode"] = "warm",
+                    ["model"] = profile.Model,
+                    ["reasoningEffort"] = profile.ReasoningEffort,
+                    ["serviceTier"] = profile.ServiceTier ?? "default"
+                });
+        }
+        finally
+        {
+            _startupGate.Release();
+        }
+    }
+
     private async Task StartIfNeededAsync(string correlationId, string appId, string endpoint, CancellationToken cancellationToken)
     {
         var shouldInitializeExistingProcess = false;
@@ -415,13 +440,14 @@ sealed class CodexAppServerClient : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(outputSchemaJson))
         {
             using var outputSchema = JsonDocument.Parse(outputSchemaJson);
-            if (LooksLikeJsonSchema(outputSchema.RootElement))
+            if (JsonSchemaUtilities.LooksLikeJsonSchema(outputSchema.RootElement))
             {
                 turnParams["outputSchema"] = outputSchema.RootElement.Clone();
             }
             else
             {
-                turnParams["outputSchema"] = BuildJsonSchemaFromExample(outputSchema.RootElement);
+                using var derivedSchema = JsonDocument.Parse(JsonSchemaUtilities.NormalizeToSchemaJson(outputSchema.RootElement));
+                turnParams["outputSchema"] = derivedSchema.RootElement.Clone();
                 _ = _traceLogger.WriteEventAsync(
                     correlationId,
                     appId,
@@ -1697,74 +1723,6 @@ sealed class CodexAppServerClient : IAsyncDisposable
             JsonValueKind.String => idElement.GetString(),
             JsonValueKind.Number => idElement.GetInt64().ToString(CultureInfo.InvariantCulture),
             _ => null
-        };
-    }
-
-    private static bool LooksLikeJsonSchema(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        return element.TryGetProperty("$schema", out _)
-            || element.TryGetProperty("type", out _)
-            || element.TryGetProperty("properties", out _)
-            || element.TryGetProperty("items", out _)
-            || element.TryGetProperty("required", out _)
-            || element.TryGetProperty("$defs", out _)
-            || element.TryGetProperty("definitions", out _);
-    }
-
-    private static object BuildJsonSchemaFromExample(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Object => BuildObjectSchema(element),
-            JsonValueKind.Array => BuildArraySchema(element),
-            JsonValueKind.String => new Dictionary<string, object?> { ["type"] = "string" },
-            JsonValueKind.Number => new Dictionary<string, object?> { ["type"] = element.TryGetInt64(out _) ? "integer" : "number" },
-            JsonValueKind.True or JsonValueKind.False => new Dictionary<string, object?> { ["type"] = "boolean" },
-            JsonValueKind.Null => new Dictionary<string, object?> { ["type"] = "null" },
-            _ => new Dictionary<string, object?>()
-        };
-    }
-
-    private static Dictionary<string, object?> BuildObjectSchema(JsonElement element)
-    {
-        var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
-        var required = new List<string>();
-        foreach (var property in element.EnumerateObject())
-        {
-            properties[property.Name] = BuildJsonSchemaFromExample(property.Value);
-            required.Add(property.Name);
-        }
-
-        return new Dictionary<string, object?>
-        {
-            ["type"] = "object",
-            ["properties"] = properties,
-            ["required"] = required,
-            ["additionalProperties"] = false
-        };
-    }
-
-    private static Dictionary<string, object?> BuildArraySchema(JsonElement element)
-    {
-        object itemsSchema;
-        if (element.GetArrayLength() == 0)
-        {
-            itemsSchema = new Dictionary<string, object?>();
-        }
-        else
-        {
-            itemsSchema = BuildJsonSchemaFromExample(element.EnumerateArray().First());
-        }
-
-        return new Dictionary<string, object?>
-        {
-            ["type"] = "array",
-            ["items"] = itemsSchema
         };
     }
 

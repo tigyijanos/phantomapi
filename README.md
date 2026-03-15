@@ -259,6 +259,58 @@ App-local example requests live with the package itself:
 7. Response and operational signals are emitted together
 ```
 
+## Runtime Acceleration Features
+
+PhantomAPI now includes a layered warm path so repeated requests do not always pay the same setup cost.
+
+- eager warm `codex app-server` startup when warm mode is enabled
+- compiled instruction-bundle cache per `app:endpoint`
+- endpoint contract plus derived output-schema cache per `app:endpoint`
+- persistent `codex exec resume` session pool keyed by route, model, reasoning, tier, and bundle hash
+- endpoint-declared startup warm metadata in endpoint markdown frontmatter
+
+Current runtime shape:
+
+```text
+process start
+    |
+    +-- eager app-server startup
+    +-- scan endpoint warmStart metadata
+    +-- prewarm cache-only endpoints
+    +-- prewarm exec-session endpoints only when explicitly readonly-safe
+
+request
+    |
+    +-- contract/schema cache
+    +-- instruction-bundle cache
+    +-- warm app-server attempt
+    +-- cold exec resume fallback
+    +-- fresh exec only when no reusable session exists
+```
+
+Endpoint warm metadata is declared directly in endpoint markdown:
+
+```md
+---
+warmStart: cache-only
+warmupRequest: .examples/login.json
+readOnlyWarmup: false
+---
+```
+
+Supported warm modes:
+
+- `cache-only`
+  compile route metadata and instruction context at startup, but do not execute a real request
+- `exec-session`
+  create a reusable `codex exec resume` session only for endpoints that explicitly declare a safe readonly warmup request
+
+Important runtime rule:
+
+- instruction files describe rules, contracts, and shapes
+- concrete persisted facts still must be read from live runtime state under `data/apps/<app>`
+- write endpoints should generally stay on `cache-only` warm start unless a safe startup request is explicitly designed for them
+
 ## Observability Model
 
 The framework defines a first-class operational surface:
@@ -365,11 +417,15 @@ Preferred configuration is `appsettings.json` under the `Phantom` section:
 - `CliArgumentsTemplate`
   optional advanced override; if empty, PhantomAPI builds the Codex CLI args from `Model` plus `ReasoningEffort`
 - `UseWarmAppServer`
-  when true, starts `codex app-server --listen stdio://` once and reuses it
+  when true, PhantomAPI eagerly starts `codex app-server --listen stdio://` once on app startup and reuses it
+- `UseExecSessionPool`
+  when true, successful `codex exec` sessions are stored and later reused through `codex exec resume`
 - `CliTimeoutSeconds`
   default is `180`
 - `FallbackToColdExecution`
   when true, cold mode is used automatically if warm mode fails
+- `WarmTurnGraceSeconds`
+  how long the warm app-server path is allowed to keep trying to recover a final textual response before it falls back
 - `FastModeEnabled`
   global default for fast mode when request does not set `fastMode` / `fast`
 - `FastModeModel`
@@ -389,7 +445,9 @@ Environment variable overrides still work:
 - `Phantom__CliArgumentsTemplate`
 - `Phantom__CliTimeoutSeconds`
 - `Phantom__UseWarmAppServer`
+- `Phantom__UseExecSessionPool`
 - `Phantom__FallbackToColdExecution`
+- `Phantom__WarmTurnGraceSeconds`
 - `Phantom__FastModeEnabled`
 - `Phantom__FastModeModel`
 - `Phantom__FastModeReasoningEffort`

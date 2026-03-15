@@ -74,12 +74,61 @@ if (phantomOptions.WarmTurnGraceSeconds <= 0)
 var app = builder.Build();
 var traceLogger = new TraceLogger(app.Environment.ContentRootPath);
 var instructionBundleCompiler = new InstructionBundleCompiler(app.Environment.ContentRootPath);
+var endpointContractCache = new EndpointContractCache(app.Environment.ContentRootPath);
 var execSessionPool = phantomOptions.UseExecSessionPool
     ? new CodexExecSessionPool(app.Environment.ContentRootPath)
     : null;
 var appServerClient = phantomOptions.UseWarmAppServer
     ? new CodexAppServerClient(phantomOptions, app.Environment.ContentRootPath, traceLogger)
     : null;
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (appServerClient is null || !phantomOptions.UseWarmAppServer)
+    {
+        return;
+    }
+
+    _ = Task.Run(async () =>
+    {
+        var correlationId = $"startup_{Guid.NewGuid():N}";
+        try
+        {
+            await appServerClient.PrimeAsync(defaultProfile, correlationId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            await traceLogger.WriteEventAsync(
+                correlationId,
+                "framework",
+                "warm-start",
+                "appserver.eager-startup",
+                "failed",
+                null,
+                error: ex.Message,
+                exception: ex,
+                metadata: new()
+                {
+                    ["model"] = defaultProfile.Model,
+                    ["reasoningEffort"] = defaultProfile.ReasoningEffort,
+                    ["serviceTier"] = defaultProfile.ServiceTier ?? "default"
+                });
+        }
+    });
+});
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(() => WarmConfiguredEndpointsAsync(
+        app.Environment.ContentRootPath,
+        defaultProfile,
+        phantomOptions,
+        traceLogger,
+        instructionBundleCompiler,
+        endpointContractCache,
+        execSessionPool,
+        cliArgumentsTemplateWasProvided));
+});
 
 app.Lifetime.ApplicationStopping.Register(() =>
 {
@@ -167,30 +216,34 @@ app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment envi
         appId = routeResult.Item1;
         endpoint = routeResult.Item2;
 
-        var contractInstruction = await TraceStepAsyncResult(
+        var resolvedContract = await TraceStepAsyncResult(
             traceLogger,
             correlationId,
             appId,
             endpoint,
             "request.contract.resolve",
-            () => Task.FromResult(ResolveContractInstruction(environment.ContentRootPath, appId, endpoint)));
+            () => Task.FromResult(endpointContractCache.GetOrLoad(appId, endpoint)),
+            new()
+            {
+                ["routeKey"] = $"{appId}:{endpoint}"
+            });
 
-        if (!TryExtractFirstJsonCodeBlock(contractInstruction, out var responseContractJson, out var contractExtractionError))
-        {
-            return BuildProblem("Resolved contract instruction is missing a response contract.", contractExtractionError, 500);
-        }
-
-        var responseContract = await TraceStepAsyncResult(
-            traceLogger,
+        var responseContractJson = resolvedContract.ResponseContractJson;
+        await traceLogger.WriteEventAsync(
             correlationId,
             appId,
             endpoint,
-            "request.contract.parse",
-            () => Task.FromResult(JsonDocument.Parse(responseContractJson!)),
+            "request.contract.cache",
+            "info",
             null,
-            new() { ["path"] = endpoint });
-
-        using var responseContractCleanup = responseContract;
+            detail: "Resolved endpoint contract and output schema from cache-aware route metadata.",
+            metadata: new()
+            {
+                ["routeKey"] = resolvedContract.RouteKey,
+                ["cacheHit"] = resolvedContract.CacheHit,
+                ["sourcePath"] = resolvedContract.SourcePath.Replace('\\', '/'),
+                ["outputSchemaDerived"] = resolvedContract.OutputSchemaWasDerived
+            });
 
         var fastMode = await TraceStepAsyncResult(
             traceLogger,
@@ -270,7 +323,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment envi
                         appId,
                         endpoint,
                         "codex.exec.warm",
-                        () => appServerClient.InvokeAsync(runtimeProfile, rawRequest, responseContractJson!, instructionBundle!, correlationId, appId, endpoint, cancellationToken),
+                        () => appServerClient.InvokeAsync(runtimeProfile, rawRequest, resolvedContract.OutputSchemaJson, instructionBundle!, correlationId, appId, endpoint, cancellationToken),
                         null,
                         new()
                         {
@@ -376,7 +429,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment envi
             "response.contract-match",
             () =>
             {
-                var match = MatchesContract(responseContract.RootElement, cliResponse.RootElement, "$", out var contractError);
+                var match = MatchesContract(resolvedContract.ResponseContract, cliResponse.RootElement, "$", out var contractError);
                 return Task.FromResult((match, contractError));
             },
             null,
@@ -528,52 +581,6 @@ static bool TryGetRoute(JsonElement requestRoot, out string? appId, out string? 
     return true;
 }
 
-static string ResolveContractInstruction(string contentRootPath, string appId, string endpoint)
-{
-    var appDirectory = Path.Combine(contentRootPath, "instructions", "apps", appId);
-    if (!Directory.Exists(appDirectory))
-    {
-        return LoadFrameworkInstruction(contentRootPath, Path.Combine("errors", "app-not-found.md"));
-    }
-
-    var relativePath = endpoint.Replace('/', Path.DirectorySeparatorChar) + ".md";
-    var endpointPath = Path.Combine(appDirectory, "endpoints", relativePath);
-
-    if (!File.Exists(endpointPath))
-    {
-        return LoadFrameworkInstruction(contentRootPath, Path.Combine("errors", "endpoint-not-found.md"));
-    }
-
-    return File.ReadAllText(endpointPath).Trim();
-}
-
-static string LoadFrameworkInstruction(string contentRootPath, string relativePath)
-{
-    var fullPath = Path.Combine(contentRootPath, "instructions", "framework", relativePath);
-    if (!File.Exists(fullPath))
-    {
-        throw new FileNotFoundException($"No framework instruction file found at instructions/framework/{relativePath.Replace('\\', '/')}");
-    }
-
-    return File.ReadAllText(fullPath).Trim();
-}
-
-static bool TryExtractFirstJsonCodeBlock(string markdown, out string? json, out string? error)
-{
-    var match = Regex.Match(markdown, "```json\\s*(?<json>[\\s\\S]*?)```", RegexOptions.IgnoreCase);
-
-    if (!match.Success)
-    {
-        json = null;
-        error = "Add a ```json ... ``` block to the endpoint instruction. That block is the hard response contract.";
-        return false;
-    }
-
-    json = match.Groups["json"].Value.Trim();
-    error = null;
-    return true;
-}
-
 static bool TryGetFastModePreference(JsonElement requestRoot, out bool fastMode)
 {
     fastMode = false;
@@ -605,6 +612,221 @@ static bool TryGetFastModePreference(JsonElement requestRoot, out bool fastMode)
     }
 
     return false;
+}
+
+static async Task WarmConfiguredEndpointsAsync(
+    string contentRootPath,
+    RuntimeProfile profile,
+    PhantomOptions options,
+    TraceLogger traceLogger,
+    InstructionBundleCompiler instructionBundleCompiler,
+    EndpointContractCache endpointContractCache,
+    CodexExecSessionPool? execSessionPool,
+    bool cliArgumentsTemplateWasProvided)
+{
+    var configuredWarmStarts = EndpointWarmStartCatalog.Discover(contentRootPath);
+    if (configuredWarmStarts.Count == 0)
+    {
+        return;
+    }
+
+    foreach (var target in configuredWarmStarts)
+    {
+        var correlationId = $"warmstart_{Guid.NewGuid():N}";
+        try
+        {
+            var resolvedContract = await TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.contract",
+                () => Task.FromResult(endpointContractCache.GetOrLoad(target.AppId, target.Endpoint)),
+                new()
+                {
+                    ["mode"] = target.WarmStart.Mode,
+                    ["endpointPath"] = target.EndpointPath.Replace('\\', '/')
+                });
+
+            var instructionBundle = await TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.bundle",
+                () => Task.FromResult(instructionBundleCompiler.GetOrCompile(target.AppId, target.Endpoint)),
+                new()
+                {
+                    ["mode"] = target.WarmStart.Mode,
+                    ["contractCacheHit"] = resolvedContract.CacheHit
+                });
+
+            if (!target.WarmStart.UsesExecSession)
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.complete",
+                    "success",
+                    null,
+                    detail: "Completed cache-only warm start.",
+                    metadata: new()
+                    {
+                        ["mode"] = target.WarmStart.Mode,
+                        ["bundleHash"] = instructionBundle.BundleHash
+                    });
+                continue;
+            }
+
+            if (execSessionPool is null || !options.UseExecSessionPool)
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "skipped",
+                    null,
+                    detail: "Exec-session warm start skipped because the exec session pool is disabled.",
+                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                continue;
+            }
+
+            if (cliArgumentsTemplateWasProvided)
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "skipped",
+                    null,
+                    detail: "Exec-session warm start skipped because a custom CliArgumentsTemplate is configured.",
+                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                continue;
+            }
+
+            if (!target.WarmStart.ReadOnlyWarmup)
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "skipped",
+                    null,
+                    detail: "Exec-session warm start skipped because the endpoint is not marked as readonly-safe for startup warmup.",
+                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                continue;
+            }
+
+            var execSessionKey = BuildExecSessionKey(target.AppId, target.Endpoint, profile, instructionBundle);
+            var existingSession = await execSessionPool.GetAsync(execSessionKey, CancellationToken.None);
+            if (existingSession is not null)
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "skipped",
+                    null,
+                    detail: "Exec-session warm start skipped because a compatible stored session already exists.",
+                    metadata: new()
+                    {
+                        ["sessionKey"] = execSessionKey,
+                        ["sessionId"] = existingSession.SessionId
+                    });
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(target.WarmStart.WarmupRequest))
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "skipped",
+                    null,
+                    detail: "Exec-session warm start skipped because no warmupRequest is configured.",
+                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                continue;
+            }
+
+            var warmupRequestPath = ResolveWarmupRequestPath(contentRootPath, target.AppId, target.WarmStart.WarmupRequest);
+            if (!File.Exists(warmupRequestPath))
+            {
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    "warmstart.exec-session",
+                    "failed",
+                    null,
+                    error: $"Warmup request file not found: {warmupRequestPath}",
+                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                continue;
+            }
+
+            var warmupRequest = await File.ReadAllTextAsync(warmupRequestPath);
+            await TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.exec-session",
+                () => InvokeCliAsync(
+                    options,
+                    profile,
+                    contentRootPath,
+                    warmupRequest,
+                    CancellationToken.None,
+                    traceLogger,
+                    correlationId,
+                    target.AppId,
+                    target.Endpoint,
+                    instructionBundle,
+                    execSessionKey,
+                    execSessionPool,
+                    cliArgumentsTemplateWasProvided),
+                new()
+                {
+                    ["mode"] = target.WarmStart.Mode,
+                    ["warmupRequestPath"] = warmupRequestPath.Replace('\\', '/'),
+                    ["sessionKey"] = execSessionKey
+                });
+        }
+        catch (Exception ex)
+        {
+            await traceLogger.WriteEventAsync(
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.complete",
+                "failed",
+                null,
+                error: ex.Message,
+                exception: ex,
+                metadata: new()
+                {
+                    ["mode"] = target.WarmStart.Mode,
+                    ["endpointPath"] = target.EndpointPath.Replace('\\', '/')
+                });
+        }
+    }
+}
+
+static string ResolveWarmupRequestPath(string contentRootPath, string appId, string warmupRequest)
+{
+    if (Path.IsPathRooted(warmupRequest))
+    {
+        return warmupRequest;
+    }
+
+    var normalized = warmupRequest.Replace('/', Path.DirectorySeparatorChar);
+    return Path.GetFullPath(Path.Combine(contentRootPath, "instructions", "apps", appId, normalized));
 }
 
 static RuntimeProfile ResolveRuntimeProfile(PhantomOptions options, bool fastMode)

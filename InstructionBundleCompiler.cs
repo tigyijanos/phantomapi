@@ -133,6 +133,9 @@ sealed class InstructionBundleCompiler
         builder.AppendLine("Treat the bundled file snapshots as satisfying the required instruction read order for this request.");
         builder.AppendLine("This is a runtime turn, not a coding task.");
         builder.AppendLine("Do not inspect or modify instruction/source files under instructions/ or the repository unless a recovery path explicitly requires it.");
+        builder.AppendLine("Bundled instructions describe rules, contracts, and shapes. They do not contain authoritative live entity values.");
+        builder.AppendLine($"When current entities, sessions, balances, tasks, counters, or other persisted facts matter, read the live files under data/apps/{appId} before deciding.");
+        builder.AppendLine("Do not infer current runtime state from examples, manifests, entity docs, or previous turn memory.");
         builder.AppendLine($"Only read or write live runtime state under data/apps/{appId} when the selected endpoint requires it.");
         builder.AppendLine("Do not produce patches, diffs, markdown, or explanations.");
         builder.AppendLine("After the minimum required runtime work is done, emit the final contract-shaped JSON immediately.");

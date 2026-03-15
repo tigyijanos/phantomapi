@@ -2,6 +2,8 @@
 
 Generic framework behavior for every app:
 
+- endpoint files may begin with orchestration frontmatter metadata such as `warmStart`, `warmupRequest`, and `readOnlyWarmup`
+- that frontmatter is runtime orchestration metadata, not business behavior by itself
 - the request body is raw JSON
 - the request must contain `app` and `endpoint`
 - route resolution happens through `instructions/apps/<app>`
@@ -10,6 +12,8 @@ Generic framework behavior for every app:
 - the app self-healing file is `instructions/apps/<app>/config/self-healing.md` when present
 - the endpoint response contract is the first `json` code block in the selected endpoint file
 - contract literal values are shape examples, not authoritative runtime data
+- when a request depends on current entities, sessions, balances, tasks, ledgers, counters, or other persisted facts, read the live files under `data/apps/<app>` before deciding
+- never infer live state from examples, manifests, entity descriptions, or previous turn memory
 - if a request cannot be completed, still return the exact response shape expected by the chosen contract
 - do not read unrelated apps unless the framework needs them for discovery
 - prefer the smallest file set that is sufficient to answer the request correctly
