@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -7,127 +8,465 @@ var builder = WebApplication.CreateBuilder(args);
 
 var phantomOptions = new PhantomOptions();
 builder.Configuration.GetSection("Phantom").Bind(phantomOptions);
+var cliArgumentsTemplateWasProvided = !string.IsNullOrWhiteSpace(builder.Configuration["Phantom:CliArgumentsTemplate"]);
+
+phantomOptions.CliCommand = phantomOptions.CliCommand.Trim();
+phantomOptions.CliArgumentsTemplate = phantomOptions.CliArgumentsTemplate.Trim();
+phantomOptions.Model = phantomOptions.Model.Trim();
+phantomOptions.ReasoningEffort = phantomOptions.ReasoningEffort.Trim().ToLowerInvariant();
+phantomOptions.FastModeModel = phantomOptions.FastModeModel.Trim();
+phantomOptions.FastModeReasoningEffort = phantomOptions.FastModeReasoningEffort.Trim().ToLowerInvariant();
+phantomOptions.NormalServiceTier = phantomOptions.NormalServiceTier?.Trim();
+phantomOptions.FastModeServiceTier = phantomOptions.FastModeServiceTier?.Trim();
 
 if (string.IsNullOrWhiteSpace(phantomOptions.CliCommand))
 {
     phantomOptions.CliCommand = OperatingSystem.IsWindows() ? "codex.cmd" : "codex";
 }
 
+if (string.IsNullOrWhiteSpace(phantomOptions.Model))
+{
+    phantomOptions.Model = "gpt-5.3-codex-spark";
+}
+
+if (string.IsNullOrWhiteSpace(phantomOptions.ReasoningEffort))
+{
+    phantomOptions.ReasoningEffort = "medium";
+}
+
+if (string.IsNullOrWhiteSpace(phantomOptions.FastModeModel))
+{
+    phantomOptions.FastModeModel = phantomOptions.Model;
+}
+
+if (string.IsNullOrWhiteSpace(phantomOptions.FastModeReasoningEffort))
+{
+    phantomOptions.FastModeReasoningEffort = "low";
+}
+
+if (string.IsNullOrWhiteSpace(phantomOptions.NormalServiceTier))
+{
+    phantomOptions.NormalServiceTier = null;
+}
+
+if (string.IsNullOrWhiteSpace(phantomOptions.FastModeServiceTier))
+{
+    phantomOptions.FastModeServiceTier = "fast";
+}
+
+var defaultProfile = ResolveRuntimeProfile(phantomOptions, phantomOptions.FastModeEnabled);
+
 if (string.IsNullOrWhiteSpace(phantomOptions.CliArgumentsTemplate))
 {
-    phantomOptions.CliArgumentsTemplate = "--dangerously-bypass-approvals-and-sandbox exec --skip-git-repo-check --output-last-message {output} -";
+    phantomOptions.CliArgumentsTemplate = BuildCliArgumentsTemplate(phantomOptions, defaultProfile);
 }
 
 if (phantomOptions.CliTimeoutSeconds <= 0)
 {
-    phantomOptions.CliTimeoutSeconds = 300;
+    phantomOptions.CliTimeoutSeconds = 180;
+}
+
+if (phantomOptions.WarmTurnGraceSeconds <= 0)
+{
+    phantomOptions.WarmTurnGraceSeconds = 4;
 }
 
 var app = builder.Build();
+var traceLogger = new TraceLogger(app.Environment.ContentRootPath);
+var instructionBundleCompiler = new InstructionBundleCompiler(app.Environment.ContentRootPath);
+var execSessionPool = phantomOptions.UseExecSessionPool
+    ? new CodexExecSessionPool(app.Environment.ContentRootPath)
+    : null;
+var appServerClient = phantomOptions.UseWarmAppServer
+    ? new CodexAppServerClient(phantomOptions, app.Environment.ContentRootPath, traceLogger)
+    : null;
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    _ = appServerClient?.DisposeAsync().AsTask();
+});
 
 app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment environment, CancellationToken cancellationToken) =>
 {
-    string rawRequest;
+    var correlationId = $"corr_{Guid.NewGuid():N}";
+    var requestTimer = Stopwatch.StartNew();
+    string? appId = null;
+    string? endpoint = null;
+    var finalResult = "success";
+    var finalSummary = "request completed";
+    string? finalError = null;
+
+    IResult BuildBadRequest(string error, string? detail)
+    {
+        finalResult = "failure";
+        finalSummary = error;
+        finalError = detail;
+        return Results.BadRequest(new { error, detail });
+    }
+
+    IResult BuildProblem(string title, string? detail, int statusCode)
+    {
+        finalResult = "failure";
+        finalSummary = title;
+        finalError = detail;
+        return Results.Problem(title: title, detail: detail, statusCode: statusCode);
+    }
 
     try
     {
-        rawRequest = await ReadRequestBodyAsync(request, cancellationToken);
+        var rawRequest = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            null,
+            null,
+            "request.body.read",
+            () => ReadRequestBodyAsync(request, cancellationToken),
+            new Dictionary<string, object?> { ["path"] = "/dynamic-api" },
+            new() { ["source"] = "HttpRequest" });
+
+        if (string.IsNullOrWhiteSpace(rawRequest))
+        {
+            return BuildBadRequest("Request body is required.", null);
+        }
+
+        var requestDocument = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            null,
+            null,
+            "request.parse-json",
+            () => Task.FromResult(JsonDocument.Parse(rawRequest)),
+            null,
+            new() { ["bodyLength"] = rawRequest.Length });
+
+        using var requestDocumentCleanup = requestDocument;
+
+        if (requestDocument.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return BuildBadRequest("Request body must be a JSON object.", null);
+        }
+
+        var routeResult = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            null,
+            null,
+            "request.route",
+            () =>
+            {
+                if (!TryGetRoute(requestDocument.RootElement, out var resolvedAppId, out var resolvedEndpoint, out var routeError))
+                {
+                    throw new InvalidOperationException(routeError);
+                }
+
+                return Task.FromResult((resolvedAppId!, resolvedEndpoint!));
+            },
+            null,
+            new() { ["requestBodyKind"] = requestDocument.RootElement.ValueKind.ToString() });
+
+        appId = routeResult.Item1;
+        endpoint = routeResult.Item2;
+
+        var contractInstruction = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "request.contract.resolve",
+            () => Task.FromResult(ResolveContractInstruction(environment.ContentRootPath, appId, endpoint)));
+
+        if (!TryExtractFirstJsonCodeBlock(contractInstruction, out var responseContractJson, out var contractExtractionError))
+        {
+            return BuildProblem("Resolved contract instruction is missing a response contract.", contractExtractionError, 500);
+        }
+
+        var responseContract = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "request.contract.parse",
+            () => Task.FromResult(JsonDocument.Parse(responseContractJson!)),
+            null,
+            new() { ["path"] = endpoint });
+
+        using var responseContractCleanup = responseContract;
+
+        var fastMode = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "request.fastmode",
+            () => Task.FromResult(TryGetFastModePreference(requestDocument.RootElement, out var requestedFastMode)
+                ? requestedFastMode
+                : phantomOptions.FastModeEnabled),
+            null,
+            new() { ["configuredDefault"] = phantomOptions.FastModeEnabled });
+
+        var runtimeProfile = ResolveRuntimeProfile(phantomOptions, fastMode);
+        runtimeProfile = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "request.runtime-profile",
+            () => Task.FromResult(runtimeProfile),
+            null,
+            new()
+            {
+                ["model"] = runtimeProfile.Model,
+                ["reasoningEffort"] = runtimeProfile.ReasoningEffort,
+                ["serviceTier"] = runtimeProfile.ServiceTier ?? "default"
+            });
+
+        var needsInstructionBundle = (appServerClient is not null && phantomOptions.UseWarmAppServer)
+            || (execSessionPool is not null && phantomOptions.UseExecSessionPool);
+        CompiledInstructionBundle? instructionBundle = null;
+        if (needsInstructionBundle)
+        {
+            instructionBundle = await TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                appId,
+                endpoint,
+                "request.instructions.bundle",
+                () => Task.FromResult(instructionBundleCompiler.GetOrCompile(appId, endpoint)),
+                new()
+                {
+                    ["routeKey"] = $"{appId}:{endpoint}"
+                });
+
+            await traceLogger.WriteEventAsync(
+                correlationId,
+                appId,
+                endpoint,
+                "request.instructions.bundle.info",
+                "info",
+                null,
+                metadata: new()
+                {
+                    ["routeKey"] = instructionBundle.RouteKey,
+                    ["bundleHash"] = instructionBundle.BundleHash,
+                    ["cacheHit"] = instructionBundle.CacheHit,
+                    ["sourceFileCount"] = instructionBundle.SourceFiles.Count
+                });
+        }
+
+        var execSessionKey = instructionBundle is not null
+            ? BuildExecSessionKey(appId, endpoint, runtimeProfile, instructionBundle)
+            : null;
+
+        string cliRawResponse;
+        try
+        {
+            if (appServerClient is not null && phantomOptions.UseWarmAppServer)
+            {
+                try
+                {
+                    cliRawResponse = await TraceStepAsyncResult(
+                        traceLogger,
+                        correlationId,
+                        appId,
+                        endpoint,
+                        "codex.exec.warm",
+                        () => appServerClient.InvokeAsync(runtimeProfile, rawRequest, responseContractJson!, instructionBundle!, correlationId, appId, endpoint, cancellationToken),
+                        null,
+                        new()
+                        {
+                            ["mode"] = "warm",
+                            ["model"] = runtimeProfile.Model,
+                            ["reasoningEffort"] = runtimeProfile.ReasoningEffort
+                        });
+                }
+                catch (Exception ex) when (phantomOptions.FallbackToColdExecution)
+                {
+                    await traceLogger.WriteEventAsync(
+                        correlationId,
+                        appId,
+                        endpoint,
+                        "codex.exec.warm-fallback",
+                        "started",
+                        null,
+                        detail: "warm execution failed, falling back to cold execution",
+                        metadata: new() { ["error"] = Truncate(ex.Message, 240) });
+
+                    cliRawResponse = await TraceStepAsyncResult(
+                        traceLogger,
+                        correlationId,
+                        appId,
+                        endpoint,
+                        "codex.exec.cold",
+                        () => InvokeCliAsync(
+                            phantomOptions,
+                            runtimeProfile,
+                            environment.ContentRootPath,
+                            rawRequest,
+                            cancellationToken,
+                            traceLogger,
+                            correlationId,
+                            appId,
+                            endpoint,
+                            instructionBundle,
+                            execSessionKey,
+                            execSessionPool,
+                            cliArgumentsTemplateWasProvided),
+                        null,
+                        new()
+                        {
+                            ["mode"] = "cold",
+                            ["model"] = runtimeProfile.Model,
+                            ["reasoningEffort"] = runtimeProfile.ReasoningEffort
+                        });
+                }
+            }
+            else
+            {
+                cliRawResponse = await TraceStepAsyncResult(
+                    traceLogger,
+                    correlationId,
+                    appId,
+                    endpoint,
+                    "codex.exec.cold",
+                    () => InvokeCliAsync(
+                        phantomOptions,
+                        runtimeProfile,
+                        environment.ContentRootPath,
+                        rawRequest,
+                        cancellationToken,
+                        traceLogger,
+                        correlationId,
+                        appId,
+                        endpoint,
+                        instructionBundle,
+                        execSessionKey,
+                        execSessionPool,
+                        cliArgumentsTemplateWasProvided),
+                    null,
+                    new()
+                    {
+                        ["mode"] = "cold",
+                        ["model"] = runtimeProfile.Model,
+                        ["reasoningEffort"] = runtimeProfile.ReasoningEffort
+                    });
+            }
+        }
+        catch (Exception ex)
+        {
+            return BuildProblem("CLI invocation failed.", ex.Message, 502);
+        }
+
+        var cliResponse = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "response.parse-json",
+            () => Task.FromResult(JsonDocument.Parse(cliRawResponse)),
+            null,
+            new() { ["responseLength"] = cliRawResponse.Length });
+
+        using var cliResponseCleanup = cliResponse;
+
+        var contractMatch = await TraceStepAsyncResult(
+            traceLogger,
+            correlationId,
+            appId,
+            endpoint,
+            "response.contract-match",
+            () =>
+            {
+                var match = MatchesContract(responseContract.RootElement, cliResponse.RootElement, "$", out var contractError);
+                return Task.FromResult((match, contractError));
+            },
+            null,
+            new() { ["path"] = "/dynamic-api" });
+
+        if (!contractMatch.match)
+        {
+            return BuildProblem("CLI response failed the hard guard.", contractMatch.contractError, 502);
+        }
+
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            "request.return",
+            "success",
+            null,
+            detail: "response returned",
+            metadata: new()
+            {
+                ["outputBytes"] = cliResponse.RootElement.GetRawText().Length
+            });
+
+        return Results.Content(cliResponse.RootElement.GetRawText(), "application/json");
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = "Failed to read request body.", detail = ex.Message });
+        finalResult = "failure";
+        finalSummary = "Unhandled exception in request processing";
+        finalError = ex.Message;
+        return BuildProblem("Request processing failed.", ex.Message, 500);
     }
-
-    if (string.IsNullOrWhiteSpace(rawRequest))
+    finally
     {
-        return Results.BadRequest(new { error = "Request body is required." });
+        requestTimer.Stop();
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            "request.complete",
+            finalResult,
+            requestTimer.ElapsedMilliseconds,
+            detail: finalSummary,
+            error: finalError);
     }
-
-    JsonDocument requestDocument;
-
-    try
-    {
-        requestDocument = JsonDocument.Parse(rawRequest);
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new { error = "Request body must be valid JSON.", detail = ex.Message });
-    }
-
-    using var requestDocumentCleanup = requestDocument;
-
-    if (requestDocument.RootElement.ValueKind != JsonValueKind.Object)
-    {
-        return Results.BadRequest(new { error = "Request body must be a JSON object." });
-    }
-
-    if (!TryGetRoute(requestDocument.RootElement, out var appId, out var endpoint, out var routeError))
-    {
-        return Results.BadRequest(new { error = routeError });
-    }
-
-    string contractInstruction;
-
-    try
-    {
-        contractInstruction = ResolveContractInstruction(environment.ContentRootPath, appId!, endpoint!);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(title: "Failed to resolve response contract.", detail: ex.Message, statusCode: 500);
-    }
-
-    if (!TryExtractFirstJsonCodeBlock(contractInstruction, out var responseContractJson, out var contractExtractionError))
-    {
-        return Results.Problem(title: "Resolved contract instruction is missing a response contract.", detail: contractExtractionError, statusCode: 500);
-    }
-
-    JsonDocument responseContract;
-
-    try
-    {
-        responseContract = JsonDocument.Parse(responseContractJson!);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(title: "Endpoint response contract is not valid JSON.", detail: ex.Message, statusCode: 500);
-    }
-
-    using var responseContractCleanup = responseContract;
-
-    string cliRawResponse;
-
-    try
-    {
-        cliRawResponse = await InvokeCliAsync(phantomOptions, environment.ContentRootPath, rawRequest, cancellationToken);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(title: "CLI invocation failed.", detail: ex.Message, statusCode: 502);
-    }
-
-    JsonDocument cliResponse;
-
-    try
-    {
-        cliResponse = JsonDocument.Parse(cliRawResponse);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(title: "CLI returned invalid JSON.", detail: ex.Message, statusCode: 502);
-    }
-
-    using var cliResponseCleanup = cliResponse;
-
-    if (!MatchesContract(responseContract.RootElement, cliResponse.RootElement, "$", out var guardError))
-    {
-        return Results.Problem(title: "CLI response failed the hard guard.", detail: guardError, statusCode: 502);
-    }
-
-    return Results.Content(cliResponse.RootElement.GetRawText(), "application/json");
 });
 
 app.Run();
+
+static async Task<T> TraceStepAsyncResult<T>(
+    TraceLogger traceLogger,
+    string correlationId,
+    string? appId,
+    string? endpoint,
+    string stage,
+    Func<Task<T>> action,
+    Dictionary<string, object?>? metadata = null,
+    Dictionary<string, object?>? details = null)
+{
+    var stopwatch = Stopwatch.StartNew();
+    try
+    {
+        var result = await action();
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            stage,
+            "success",
+            stopwatch.ElapsedMilliseconds,
+            detail: "completed",
+            metadata: metadata);
+        return result;
+    }
+    catch (Exception ex)
+    {
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            stage,
+            "failed",
+            stopwatch.ElapsedMilliseconds,
+            detail: details is null ? null : JsonSerializer.Serialize(details),
+            error: ex.Message,
+            exception: ex,
+            metadata: metadata);
+        throw;
+    }
+}
 
 static async Task<string> ReadRequestBodyAsync(HttpRequest request, CancellationToken cancellationToken)
 {
@@ -153,7 +492,6 @@ static bool TryGetRoute(JsonElement requestRoot, out string? appId, out string? 
     }
 
     appId = appProperty.GetString()?.Trim();
-
     if (string.IsNullOrWhiteSpace(appId))
     {
         error = "The 'app' field cannot be empty.";
@@ -173,7 +511,6 @@ static bool TryGetRoute(JsonElement requestRoot, out string? appId, out string? 
     }
 
     endpoint = endpointProperty.GetString()?.Trim();
-
     if (string.IsNullOrWhiteSpace(endpoint))
     {
         error = "The 'endpoint' field cannot be empty.";
@@ -181,7 +518,6 @@ static bool TryGetRoute(JsonElement requestRoot, out string? appId, out string? 
     }
 
     var segments = endpoint.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
     if (segments.Length == 0 || segments.Any(segment => !Regex.IsMatch(segment, "^[A-Za-z0-9_-]+$")))
     {
         error = "The 'endpoint' field contains invalid path segments.";
@@ -195,7 +531,6 @@ static bool TryGetRoute(JsonElement requestRoot, out string? appId, out string? 
 static string ResolveContractInstruction(string contentRootPath, string appId, string endpoint)
 {
     var appDirectory = Path.Combine(contentRootPath, "instructions", "apps", appId);
-
     if (!Directory.Exists(appDirectory))
     {
         return LoadFrameworkInstruction(contentRootPath, Path.Combine("errors", "app-not-found.md"));
@@ -215,7 +550,6 @@ static string ResolveContractInstruction(string contentRootPath, string appId, s
 static string LoadFrameworkInstruction(string contentRootPath, string relativePath)
 {
     var fullPath = Path.Combine(contentRootPath, "instructions", "framework", relativePath);
-
     if (!File.Exists(fullPath))
     {
         throw new FileNotFoundException($"No framework instruction file found at instructions/framework/{relativePath.Replace('\\', '/')}");
@@ -240,10 +574,255 @@ static bool TryExtractFirstJsonCodeBlock(string markdown, out string? json, out 
     return true;
 }
 
-static async Task<string> InvokeCliAsync(PhantomOptions options, string workingDirectory, string rawRequest, CancellationToken cancellationToken)
+static bool TryGetFastModePreference(JsonElement requestRoot, out bool fastMode)
 {
+    fastMode = false;
+
+    if (!requestRoot.TryGetProperty("fastMode", out var fastModeProperty))
+    {
+        if (!requestRoot.TryGetProperty("fast", out fastModeProperty))
+        {
+            return false;
+        }
+    }
+
+    if (fastModeProperty.ValueKind == JsonValueKind.True)
+    {
+        fastMode = true;
+        return true;
+    }
+
+    if (fastModeProperty.ValueKind == JsonValueKind.False)
+    {
+        fastMode = false;
+        return true;
+    }
+
+    if (fastModeProperty.ValueKind == JsonValueKind.String && bool.TryParse(fastModeProperty.GetString(), out var parsed))
+    {
+        fastMode = parsed;
+        return true;
+    }
+
+    return false;
+}
+
+static RuntimeProfile ResolveRuntimeProfile(PhantomOptions options, bool fastMode)
+{
+    return fastMode
+        ? new RuntimeProfile(options.FastModeModel, options.FastModeReasoningEffort, NormalizeServiceTier(options.FastModeServiceTier))
+        : new RuntimeProfile(options.Model, options.ReasoningEffort, NormalizeServiceTier(options.NormalServiceTier));
+}
+
+static string? NormalizeServiceTier(string? serviceTier)
+{
+    if (string.IsNullOrWhiteSpace(serviceTier))
+    {
+        return null;
+    }
+
+    var normalized = serviceTier.Trim().ToLowerInvariant();
+    return normalized is "fast" or "flex" ? normalized : null;
+}
+
+static async Task<string> InvokeCliAsync(
+    PhantomOptions options,
+    RuntimeProfile profile,
+    string workingDirectory,
+    string rawRequest,
+    CancellationToken cancellationToken,
+    TraceLogger traceLogger,
+    string correlationId,
+    string? appId,
+    string? endpoint,
+    CompiledInstructionBundle? instructionBundle,
+    string? execSessionKey,
+    CodexExecSessionPool? execSessionPool,
+    bool cliArgumentsTemplateWasProvided)
+{
+    var canUseSessionPool = execSessionPool is not null
+        && options.UseExecSessionPool
+        && !cliArgumentsTemplateWasProvided
+        && instructionBundle is not null
+        && !string.IsNullOrWhiteSpace(execSessionKey);
+
+    if (!canUseSessionPool)
+    {
+        if (execSessionPool is not null && cliArgumentsTemplateWasProvided)
+        {
+            await traceLogger.WriteEventAsync(
+                correlationId,
+                appId,
+                endpoint,
+                "codex.exec.session-pool",
+                "skipped",
+                null,
+                detail: "Session pool skipped because a custom CliArgumentsTemplate is configured.");
+        }
+
+        var directResult = await InvokeCliProcessAsync(
+            options,
+            profile,
+            workingDirectory,
+            rawRequest,
+            cancellationToken,
+            traceLogger,
+            correlationId,
+            resumeSessionId: null,
+            allowEarlyTermination: true);
+        return directResult.RawResponse;
+    }
+
+    await using var lease = await execSessionPool!.TryAcquireAsync(execSessionKey!, cancellationToken);
+    if (lease is null)
+    {
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            "codex.exec.session-pool",
+            "busy",
+            null,
+            detail: "Session pool key is already in use; using a one-off cold exec instead.",
+            metadata: new() { ["sessionKey"] = execSessionKey });
+
+        var busyFallbackResult = await InvokeCliProcessAsync(
+            options,
+            profile,
+            workingDirectory,
+            rawRequest,
+            cancellationToken,
+            traceLogger,
+            correlationId,
+            resumeSessionId: null,
+            allowEarlyTermination: true);
+        return busyFallbackResult.RawResponse;
+    }
+
+    var storedSession = await execSessionPool.GetAsync(execSessionKey!, cancellationToken);
+    if (storedSession is not null)
+    {
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            "codex.exec.session-pool",
+            "resume",
+            null,
+            detail: "Resuming a previously stored codex exec session.",
+            metadata: new()
+            {
+                ["sessionKey"] = execSessionKey,
+                ["sessionId"] = storedSession.SessionId,
+                ["bundleHash"] = storedSession.BundleHash
+            });
+
+        try
+        {
+            var resumedResult = await InvokeCliProcessAsync(
+                options,
+                profile,
+                workingDirectory,
+                rawRequest,
+                cancellationToken,
+                traceLogger,
+                correlationId,
+                resumeSessionId: storedSession.SessionId,
+                allowEarlyTermination: true);
+            return resumedResult.RawResponse;
+        }
+        catch (Exception ex) when (LooksLikeInvalidResumeSession(ex.Message))
+        {
+            await execSessionPool.RemoveAsync(execSessionKey!, cancellationToken);
+            await traceLogger.WriteEventAsync(
+                correlationId,
+                appId,
+                endpoint,
+                "codex.exec.session-pool",
+                "invalidated",
+                null,
+                detail: "Stored exec session became invalid; removed it and retrying fresh.",
+                metadata: new()
+                {
+                    ["sessionKey"] = execSessionKey,
+                    ["sessionId"] = storedSession.SessionId
+                });
+        }
+    }
+
+    await traceLogger.WriteEventAsync(
+        correlationId,
+        appId,
+        endpoint,
+        "codex.exec.session-pool",
+        "fresh",
+        null,
+        detail: "No reusable exec session was available; starting a fresh codex exec session.",
+        metadata: new()
+        {
+            ["sessionKey"] = execSessionKey,
+            ["bundleHash"] = instructionBundle!.BundleHash
+        });
+
+    var freshResult = await InvokeCliProcessAsync(
+        options,
+        profile,
+        workingDirectory,
+        rawRequest,
+        cancellationToken,
+        traceLogger,
+        correlationId,
+        resumeSessionId: null,
+        allowEarlyTermination: false);
+
+    if (!string.IsNullOrWhiteSpace(freshResult.SessionId))
+    {
+        await execSessionPool.SetAsync(
+            execSessionKey!,
+            new CodexExecSessionRecord(
+                freshResult.SessionId,
+                profile.Model,
+                profile.ReasoningEffort,
+                profile.ServiceTier,
+                instructionBundle!.BundleHash,
+                DateTimeOffset.UtcNow),
+            cancellationToken);
+
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            appId,
+            endpoint,
+            "codex.exec.session-pool",
+            "stored",
+            null,
+            detail: "Stored a fresh codex exec session for future resume.",
+            metadata: new()
+            {
+                ["sessionKey"] = execSessionKey,
+                ["sessionId"] = freshResult.SessionId,
+                ["bundleHash"] = instructionBundle!.BundleHash
+            });
+    }
+
+    return freshResult.RawResponse;
+}
+
+static async Task<CodexCliExecutionResult> InvokeCliProcessAsync(
+    PhantomOptions options,
+    RuntimeProfile profile,
+    string workingDirectory,
+    string rawRequest,
+    CancellationToken cancellationToken,
+    TraceLogger traceLogger,
+    string correlationId,
+    string? resumeSessionId,
+    bool allowEarlyTermination)
+{
+    var stopwatch = Stopwatch.StartNew();
     var outputPath = Path.Combine(Path.GetTempPath(), $"phantomapi-{Guid.NewGuid():N}.json");
-    var arguments = TokenizeArguments(options.CliArgumentsTemplate.Replace("{output}", QuoteArgument(outputPath)));
+    var arguments = resumeSessionId is null
+        ? TokenizeArguments(BuildCliArgumentsTemplate(options, profile).Replace("{output}", QuoteArgument(outputPath)))
+        : BuildResumeCliArguments(profile, outputPath, resumeSessionId);
 
     var startInfo = new ProcessStartInfo
     {
@@ -262,69 +841,225 @@ static async Task<string> InvokeCliAsync(PhantomOptions options, string workingD
     }
 
     using var process = new Process { StartInfo = startInfo };
-
-    if (!process.Start())
-    {
-        throw new InvalidOperationException("Failed to start the CLI process.");
-    }
-
-    await process.StandardInput.WriteAsync(rawRequest);
-    await process.StandardInput.FlushAsync();
-    process.StandardInput.Close();
-
-    var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-    var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-    timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.CliTimeoutSeconds));
-
+    var processStarted = false;
     try
     {
-        await process.WaitForExitAsync(timeoutCts.Token);
-    }
-    catch (OperationCanceledException)
-    {
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start the CLI process.");
+        }
+
+        processStarted = true;
+
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            null,
+            null,
+            "codex.exec.cold.start",
+            "success",
+            null,
+            metadata: new()
+            {
+                ["model"] = profile.Model,
+                ["reasoningEffort"] = profile.ReasoningEffort,
+                ["serviceTier"] = profile.ServiceTier ?? "default",
+                ["resumeSessionId"] = resumeSessionId,
+                ["allowEarlyTermination"] = allowEarlyTermination
+            });
+
+        await process.StandardInput.WriteAsync(rawRequest);
+        await process.StandardInput.FlushAsync(cancellationToken);
+        process.StandardInput.Close();
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.CliTimeoutSeconds));
+        var waitForExitTask = process.WaitForExitAsync(timeoutCts.Token);
+        var waitForOutputTask = WaitForOutputFileAsync(outputPath, timeoutCts.Token);
+        string? earlyOutput = null;
+
         try
+        {
+            var completedTask = await Task.WhenAny(waitForExitTask, waitForOutputTask);
+            if (completedTask == waitForOutputTask)
+            {
+                earlyOutput = await waitForOutputTask;
+                await traceLogger.WriteEventAsync(
+                    correlationId,
+                    null,
+                    null,
+                    "codex.exec.cold.output-ready",
+                    "success",
+                    stopwatch.ElapsedMilliseconds,
+                    metadata: new()
+                    {
+                        ["rawResponseLength"] = earlyOutput.Length,
+                        ["resumeSessionId"] = resumeSessionId
+                    });
+
+                if (allowEarlyTermination && !process.HasExited)
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            await waitForExitTask;
+        }
+        catch (OperationCanceledException)
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
             }
+
+            var partialStdout = (await stdoutTask).Trim();
+            var partialStderr = (await stderrTask).Trim();
+            var timeoutDetail = BuildCliTimeoutDetail(partialStdout, partialStderr);
+            throw new TimeoutException(timeoutDetail is null
+                ? $"CLI call timed out after {options.CliTimeoutSeconds} seconds."
+                : $"CLI call timed out after {options.CliTimeoutSeconds} seconds. {timeoutDetail}");
         }
-        catch
+
+        var stdout = (await stdoutTask).Trim();
+        var stderr = (await stderrTask).Trim();
+
+        string rawResponse;
+        if (!string.IsNullOrWhiteSpace(earlyOutput))
         {
+            rawResponse = earlyOutput;
+            TryDeleteFile(outputPath);
+        }
+        else if (File.Exists(outputPath))
+        {
+            rawResponse = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
+            TryDeleteFile(outputPath);
+        }
+        else
+        {
+            rawResponse = stdout;
         }
 
-        throw new TimeoutException($"CLI call timed out after {options.CliTimeoutSeconds} seconds.");
+        if (string.IsNullOrWhiteSpace(earlyOutput) && process.ExitCode != 0)
+        {
+            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail) ? $"CLI exited with code {process.ExitCode}." : detail);
+        }
+
+        if (string.IsNullOrWhiteSpace(rawResponse))
+        {
+            throw new InvalidOperationException("CLI returned an empty response.");
+        }
+
+        var parsedSessionId = TryParseSessionId(stdout, stderr);
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            null,
+            null,
+            "codex.exec.cold.complete",
+            "success",
+            stopwatch.ElapsedMilliseconds,
+            metadata: new()
+            {
+                ["exitCode"] = process.ExitCode,
+                ["rawResponseLength"] = rawResponse.Length,
+                ["resumeSessionId"] = resumeSessionId,
+                ["parsedSessionId"] = parsedSessionId
+            });
+
+        return new CodexCliExecutionResult(rawResponse, parsedSessionId);
     }
-
-    var stdout = (await stdoutTask).Trim();
-    var stderr = (await stderrTask).Trim();
-
-    string rawResponse;
-
-    if (File.Exists(outputPath))
+    catch (Exception ex)
     {
-        rawResponse = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
-        File.Delete(outputPath);
+        var result = processStarted ? "failed" : "failed-to-start";
+        await traceLogger.WriteEventAsync(
+            correlationId,
+            null,
+            null,
+            "codex.exec.cold.complete",
+            result,
+            stopwatch.ElapsedMilliseconds,
+            detail: ex.Message,
+            error: ex.Message,
+            exception: ex,
+            metadata: new()
+            {
+                ["processStarted"] = processStarted,
+                ["resumeSessionId"] = resumeSessionId
+            });
+
+        throw;
     }
-    else
+}
+
+static List<string> BuildResumeCliArguments(RuntimeProfile profile, string outputPath, string sessionId)
+{
+    return
+    [
+        "--dangerously-bypass-approvals-and-sandbox",
+        "exec",
+        "resume",
+        "-m",
+        profile.Model,
+        "-c",
+        $"model_reasoning_effort={profile.ReasoningEffort}",
+        "--skip-git-repo-check",
+        "--output-last-message",
+        outputPath,
+        sessionId,
+        "-"
+    ];
+}
+
+static string BuildExecSessionKey(string appId, string endpoint, RuntimeProfile profile, CompiledInstructionBundle instructionBundle)
+{
+    return string.Join(
+        "::",
+        appId,
+        endpoint,
+        profile.Model,
+        profile.ReasoningEffort,
+        profile.ServiceTier ?? "default",
+        instructionBundle.BundleHash);
+}
+
+static string? TryParseSessionId(string stdout, string stderr)
+{
+    var combined = string.IsNullOrWhiteSpace(stderr)
+        ? stdout
+        : $"{stdout}\n{stderr}";
+    var match = Regex.Match(combined, @"session id:\s*([0-9a-fA-F-]{36})", RegexOptions.IgnoreCase);
+    return match.Success
+        ? match.Groups[1].Value
+        : null;
+}
+
+static bool LooksLikeInvalidResumeSession(string message)
+{
+    if (string.IsNullOrWhiteSpace(message))
     {
-        rawResponse = stdout;
+        return false;
     }
 
-    if (process.ExitCode != 0)
-    {
-        var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-        throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail) ? $"CLI exited with code {process.ExitCode}." : detail);
-    }
-
-    if (string.IsNullOrWhiteSpace(rawResponse))
-    {
-        throw new InvalidOperationException("CLI returned an empty response.");
-    }
-
-    return rawResponse;
+    return (message.Contains("resume", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("session", StringComparison.OrdinalIgnoreCase))
+        && (message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("no session", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("unknown", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("missing", StringComparison.OrdinalIgnoreCase));
 }
 
 static List<string> TokenizeArguments(string commandLine)
@@ -368,116 +1103,204 @@ static string QuoteArgument(string value)
     return value.Contains(' ') ? $"\"{value}\"" : value;
 }
 
-static bool MatchesContract(JsonElement contract, JsonElement actual, string path, out string? error)
+static string BuildCliArgumentsTemplate(PhantomOptions options, RuntimeProfile profile)
 {
-    switch (contract.ValueKind)
+    var arguments = new List<string>
     {
-        case JsonValueKind.Object:
-            if (actual.ValueKind != JsonValueKind.Object)
-            {
-                error = $"{path} must be an object.";
-                return false;
-            }
+        "--dangerously-bypass-approvals-and-sandbox",
+        "exec",
+        "-m",
+        profile.Model,
+        "-c",
+        $"model_reasoning_effort={profile.ReasoningEffort}",
+        "--skip-git-repo-check",
+        "--output-last-message",
+        "{output}",
+        "-"
+    };
 
-            var expectedProperties = contract.EnumerateObject().Select(property => property.Name).OrderBy(name => name).ToArray();
-            var actualProperties = actual.EnumerateObject().Select(property => property.Name).OrderBy(name => name).ToArray();
+    return string.Join(' ', arguments.Select(QuoteArgument));
+}
 
-            if (!expectedProperties.SequenceEqual(actualProperties, StringComparer.Ordinal))
-            {
-                error = $"{path} properties do not match the response contract. Expected [{string.Join(", ", expectedProperties)}] but got [{string.Join(", ", actualProperties)}].";
-                return false;
-            }
+static string? BuildCliTimeoutDetail(string stdout, string stderr)
+{
+    var candidate = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+    if (string.IsNullOrWhiteSpace(candidate))
+    {
+        return null;
+    }
 
-            foreach (var property in contract.EnumerateObject())
-            {
-                if (!actual.TryGetProperty(property.Name, out var actualProperty))
-                {
-                    error = $"{path}.{property.Name} is missing.";
-                    return false;
-                }
+    var lastLine = candidate
+        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .LastOrDefault();
 
-                if (!MatchesContract(property.Value, actualProperty, $"{path}.{property.Name}", out error))
-                {
-                    return false;
-                }
-            }
+    if (string.IsNullOrWhiteSpace(lastLine))
+    {
+        return null;
+    }
 
-            error = null;
-            return true;
+    return $"Last CLI activity: {Truncate(lastLine, 240)}";
+}
 
-        case JsonValueKind.Array:
-            if (actual.ValueKind != JsonValueKind.Array)
-            {
-                error = $"{path} must be an array.";
-                return false;
-            }
+static async Task<string> WaitForOutputFileAsync(string outputPath, CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        var candidate = TryReadCompletedJsonFile(outputPath);
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return candidate;
+        }
 
-            var expectedItems = contract.EnumerateArray().ToArray();
-            var actualItems = actual.EnumerateArray().ToArray();
+        await Task.Delay(150, cancellationToken);
+    }
 
-            if (expectedItems.Length == 0)
-            {
-                error = null;
-                return true;
-            }
+    throw new OperationCanceledException(cancellationToken);
+}
 
-            if (expectedItems.Length == 1)
-            {
-                for (var index = 0; index < actualItems.Length; index++)
-                {
-                    if (!MatchesContract(expectedItems[0], actualItems[index], $"{path}[{index}]", out error))
-                    {
-                        return false;
-                    }
-                }
+static string? TryReadCompletedJsonFile(string outputPath)
+{
+    if (!File.Exists(outputPath))
+    {
+        return null;
+    }
 
-                error = null;
-                return true;
-            }
+    try
+    {
+        var raw = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
 
-            if (expectedItems.Length != actualItems.Length)
-            {
-                error = $"{path} array length does not match the response contract.";
-                return false;
-            }
-
-            for (var index = 0; index < expectedItems.Length; index++)
-            {
-                if (!MatchesContract(expectedItems[index], actualItems[index], $"{path}[{index}]", out error))
-                {
-                    return false;
-                }
-            }
-
-            error = null;
-            return true;
-
-        case JsonValueKind.String:
-            error = actual.ValueKind == JsonValueKind.String ? null : $"{path} must be a string.";
-            return error is null;
-
-        case JsonValueKind.Number:
-            error = actual.ValueKind == JsonValueKind.Number ? null : $"{path} must be a number.";
-            return error is null;
-
-        case JsonValueKind.True:
-        case JsonValueKind.False:
-            error = actual.ValueKind is JsonValueKind.True or JsonValueKind.False ? null : $"{path} must be a boolean.";
-            return error is null;
-
-        case JsonValueKind.Null:
-            error = actual.ValueKind == JsonValueKind.Null ? null : $"{path} must be null.";
-            return error is null;
-
-        default:
-            error = $"{path} contains an unsupported contract token.";
-            return false;
+        using var _ = JsonDocument.Parse(raw);
+        return raw;
+    }
+    catch (IOException)
+    {
+        return null;
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return null;
+    }
+    catch (JsonException)
+    {
+        return null;
     }
 }
 
-sealed class PhantomOptions
+static void TryDeleteFile(string path)
 {
-    public string CliCommand { get; set; } = string.Empty;
-    public string CliArgumentsTemplate { get; set; } = string.Empty;
-    public int CliTimeoutSeconds { get; set; } = 300;
+    try
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+    catch
+    {
+    }
+}
+
+static string Truncate(string value, int maxLength)
+{
+    if (value.Length <= maxLength)
+    {
+        return value;
+    }
+
+    return value[..(maxLength - 3)] + "...";
+}
+
+static bool MatchesContract(JsonElement contract, JsonElement response, string path, out string? error)
+{
+    if (contract.ValueKind == JsonValueKind.Null)
+    {
+        if (response.ValueKind == JsonValueKind.Null)
+        {
+            error = null;
+            return true;
+        }
+
+        error = $"{path} must be null, got {response.ValueKind}.";
+        return false;
+    }
+
+    if (contract.ValueKind == JsonValueKind.Object)
+    {
+        if (response.ValueKind != JsonValueKind.Object)
+        {
+            error = $"{path} must be an object, got {response.ValueKind}.";
+            return false;
+        }
+
+        foreach (var contractProperty in contract.EnumerateObject())
+        {
+            if (!response.TryGetProperty(contractProperty.Name, out var responseProperty))
+            {
+                error = $"{path} is missing property '{contractProperty.Name}'.";
+                return false;
+            }
+
+            if (!MatchesContract(contractProperty.Value, responseProperty, $"{path}.{contractProperty.Name}", out error))
+            {
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    if (contract.ValueKind == JsonValueKind.Array)
+    {
+        if (response.ValueKind != JsonValueKind.Array)
+        {
+            error = $"{path} must be an array, got {response.ValueKind}.";
+            return false;
+        }
+
+        var itemTemplate = contract.EnumerateArray().FirstOrDefault();
+        foreach (var responseItem in response.EnumerateArray())
+        {
+            if (itemTemplate.ValueKind == JsonValueKind.Undefined)
+            {
+                break;
+            }
+
+            if (!MatchesContract(itemTemplate, responseItem, $"{path}[]", out error))
+            {
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    if (!KindsMatch(contract.ValueKind, response.ValueKind))
+    {
+        error = $"{path} type mismatch, expected {contract.ValueKind}, got {response.ValueKind}.";
+        return false;
+    }
+
+    error = null;
+    return true;
+}
+
+static bool KindsMatch(JsonValueKind expected, JsonValueKind actual)
+{
+    if (expected is JsonValueKind.True or JsonValueKind.False)
+    {
+        return actual is JsonValueKind.True or JsonValueKind.False;
+    }
+
+    if (expected == actual)
+    {
+        return true;
+    }
+
+    return false;
 }
