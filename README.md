@@ -354,14 +354,52 @@ Key platform characteristics:
 
 ## Configuration
 
-Environment variables:
+Preferred configuration is `appsettings.json` under the `Phantom` section:
+
+- `CliCommand`
+  leave empty for the OS-specific default, or set it explicitly
+- `Model`
+  for example `gpt-5.4` or `gpt-5.3-codex-spark`
+- `ReasoningEffort`
+  for example `low`, `medium`, `high`, or `xhigh`
+- `CliArgumentsTemplate`
+  optional advanced override; if empty, PhantomAPI builds the Codex CLI args from `Model` plus `ReasoningEffort`
+- `UseWarmAppServer`
+  when true, starts `codex app-server --listen stdio://` once and reuses it
+- `CliTimeoutSeconds`
+  default is `180`
+- `FallbackToColdExecution`
+  when true, cold mode is used automatically if warm mode fails
+- `FastModeEnabled`
+  global default for fast mode when request does not set `fastMode` / `fast`
+- `FastModeModel`
+  model used when fast mode is active
+- `FastModeReasoningEffort`
+  reasoning effort used when fast mode is active
+- `FastModeServiceTier`
+  `fast` or `flex` when using app-server turn start fast path
+- `NormalServiceTier`
+  optional `fast` or `flex` service tier for non-fast requests
+
+Environment variable overrides still work:
 
 - `Phantom__CliCommand`
-  default is `codex.cmd` on Windows and `codex` elsewhere
+- `Phantom__Model`
+- `Phantom__ReasoningEffort`
 - `Phantom__CliArgumentsTemplate`
-  default is `--dangerously-bypass-approvals-and-sandbox exec --skip-git-repo-check --output-last-message {output} -`
 - `Phantom__CliTimeoutSeconds`
-  default is `300`
+- `Phantom__UseWarmAppServer`
+- `Phantom__FallbackToColdExecution`
+- `Phantom__FastModeEnabled`
+- `Phantom__FastModeModel`
+- `Phantom__FastModeReasoningEffort`
+- `Phantom__FastModeServiceTier`
+- `Phantom__NormalServiceTier`
+
+Fast-mode request toggle:
+
+- set `fastMode: true` in the request body to force fast profile for that request
+- set `fast: true` as shorthand for the same behavior
 
 ## Running With Docker Compose
 
@@ -424,10 +462,18 @@ Because `./.codex` is ignored by git, the container can persist Codex credential
 dotnet run
 ```
 
+If another service already owns port `5000` (most likely a container), run local with auto-port selection:
+
+```powershell
+.\run-local.ps1 -PreferredPort 5050
+```
+
+This script checks if the preferred port is occupied and automatically switches to the next free one, then launches `dotnet run` on that port.
+
 PowerShell example:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:5000/dynamic-api `
+Invoke-RestMethod -Method Post -Uri http://localhost:5050/dynamic-api `
   -ContentType "application/json" `
   -Body (Get-Content instructions/apps/bank-api/.examples/login.json -Raw)
 ```
