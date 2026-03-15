@@ -417,3 +417,12 @@ FodyWeavers.xsd
 *.msm
 *.msp
 .codex/
+
+# PhantomAPI local runtime artifacts
+/.codex-build*/
+/.tmp-appserver/
+/schema-out/
+/temp-schema.json
+/data/framework/benchmarks/
+/data/framework/exec-sessions.json
+/data/framework/traces/warm-failures/
