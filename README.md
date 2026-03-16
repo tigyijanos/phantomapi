@@ -550,6 +550,12 @@ PhantomAPI is currently classified as:
 
 <sub>The framework remains fully enterprise-ready in theory.</sub>
 
+## License
+
+PhantomAPI is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+<sub>Additional legal notes live in [docs/legal/README.md](docs/legal/README.md).</sub>
+
 ## Disclaimer
 
 No backend engineers were harmed in the development of this framework.
