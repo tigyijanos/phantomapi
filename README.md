@@ -74,6 +74,20 @@ In PhantomAPI, the documentation is not an explanation of the system.
 
 It is the system.
 
+## Elevator Pitch
+
+PhantomAPI positions itself as:
+
+- a documentation-native backend platform
+- an instruction-first application framework
+- a multi-app autonomous execution runtime
+- a contract-disciplined AI orchestration layer
+- an observability-rich backend operating model
+- a dynamic API surface for agent-mediated software systems
+
+The core premise is simple:
+define the framework precisely, package each application coherently, enforce contracts aggressively, and let the runtime execute from that declared system of truth.
+
 ## Why Teams Look At It
 
 - collapse behavioral intent, policies, and interface expectations into a single package model
