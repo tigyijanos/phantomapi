@@ -55,17 +55,24 @@ Container endpoint:
 
 - `http://localhost:8080/dynamic-api`
 
-## Why It Exists
+## Vision
 
-PhantomAPI explores what happens when documentation becomes the system of record and the runtime simply interprets that declared intent.
+Modern backend engineering suffers from a fundamental problem:
 
-The result is part backend prototype, part docs-as-runtime experiment.
+developers keep writing code.
 
-Some of it is serious platform work.
+PhantomAPI explores a radically different direction.
 
-Some of it is clearly a bit of a joke.
+Instead of implementing behavior in code and documenting it later,
+PhantomAPI promotes a model where the documentation becomes the system of record
+and the runtime simply interprets that declared intent.
 
-The code path is real either way.
+The result is a platform where backend logic can evolve at the speed of documentation updates,
+and where the boundary between specification and execution becomes pleasantly blurry.
+
+In PhantomAPI, the documentation is not an explanation of the system.
+
+It is the system.
 
 ## Why Teams Look At It
 
