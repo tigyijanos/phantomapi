@@ -2,9 +2,9 @@
 
 # PhantomAPI
 
-**Experimental Docs-As-Runtime Backend Playground**
+**Documentation-Driven, AI-Native, Slightly Unreasonable Backend Framework**
 
-*Real runtime, real contracts, intentionally playful framing.*
+*A backend framework where the documentation finally becomes the runtime.*
 
 PhantomAPI is a .NET backend experiment that routes JSON requests by `app` and `endpoint`, loads behavior from structured instruction packages, executes through Codex, validates the returned contract, and emits operational traces alongside the response.
 
