@@ -2,16 +2,16 @@
 
 # PhantomAPI
 
-**Experimental Docs-As-Runtime Backend Playground**
+**Documentation-Driven, AI-Native, Autonomous Backend Framework**
 
-*Real runtime, real contracts, intentionally playful framing.*
+*A backend framework where the documentation finally becomes the runtime.*
 
-PhantomAPI is a .NET backend experiment that routes JSON requests by `app` and `endpoint`, loads behavior from structured instruction packages, executes through Codex, validates the returned contract, and emits operational traces alongside the response.
+PhantomAPI is an instruction-defined backend platform for teams that want to externalize application behavior, operational policy, and interface contracts into a structured documentation layer.
 
 The runtime stays intentionally thin.
 The framework surface stays explicit.
-The app model stays package-oriented.
-The behavior lives in the instruction system.
+The application model stays package-oriented.
+The orchestration intelligence lives where the platform expects it to live: in the instruction system.
 
 ## What Works Today
 
@@ -55,17 +55,58 @@ Container endpoint:
 
 - `http://localhost:8080/dynamic-api`
 
-## Why It Exists
+## Vision
 
-PhantomAPI explores what happens when documentation becomes the system of record and the runtime simply interprets that declared intent.
+Modern backend engineering suffers from a fundamental problem:
 
-The result is part backend prototype, part docs-as-runtime experiment.
+developers keep writing code.
 
-Some of it is serious platform work.
+PhantomAPI explores a radically different direction.
 
-Some of it is clearly a bit of a joke.
+Instead of implementing behavior in code and documenting it later,
+PhantomAPI promotes a model where the documentation becomes the system of record
+and the runtime simply interprets that declared intent.
 
-The code path is real either way.
+The result is a platform where backend logic can evolve at the speed of documentation updates,
+and where the boundary between specification and execution becomes pleasantly blurry.
+
+In PhantomAPI, the documentation is not an explanation of the system.
+
+It is the system.
+
+## Industry Context
+
+The software industry is currently experiencing a significant shift toward AI-mediated systems.
+
+Developers are experimenting with:
+
+- agent-assisted development
+- autonomous execution runtimes
+- instruction-driven platforms
+- documentation-as-code models
+- dynamic system orchestration
+
+PhantomAPI exists somewhere in the middle of that movement.
+
+Possibly slightly ahead of it.
+
+Or slightly beside it.
+
+Time will tell.
+
+## Elevator Pitch
+
+PhantomAPI positions itself as:
+
+- a documentation-native backend platform
+- an instruction-first application framework
+- a multi-app autonomous execution runtime
+- a contract-disciplined AI orchestration layer
+- an observability-rich backend operating model
+- a dynamic API surface for agent-mediated software systems
+
+The core premise is simple:
+define the framework precisely, package each application coherently, enforce contracts aggressively, and let the runtime execute from that declared system of truth.
 
 ## Why Teams Look At It
 
@@ -539,10 +580,20 @@ Invoke-RestMethod -Method Post -Uri http://localhost:5050/dynamic-api `
 
 ---
 
-<details>
-<summary><sub>Status, license, and legal notes</sub></summary>
+## Status
 
-PhantomAPI is experimental, functional, and intentionally opinionated.
+PhantomAPI is currently classified as:
+
+**strategically experimental but architecturally inevitable**
+
+<sub>PhantomAPI was also created to explore documentation-centric AI system design as a serious engineering discipline.</sub>
+
+<sub>This secondary research objective does not affect the framework model described above.</sub>
+
+<sub>The framework remains fully enterprise-ready in theory.</sub>
+
+<details>
+<summary><sub>License and legal notes</sub></summary>
 
 PhantomAPI is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
