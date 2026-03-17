@@ -2,16 +2,16 @@
 
 # PhantomAPI
 
-**Documentation-Driven, AI-Native, Slightly Unreasonable Backend Framework**
+**Documentation-Driven, AI-Native, Autonomous Backend Framework**
 
 *A backend framework where the documentation finally becomes the runtime.*
 
-PhantomAPI is a .NET backend experiment that routes JSON requests by `app` and `endpoint`, loads behavior from structured instruction packages, executes through Codex, validates the returned contract, and emits operational traces alongside the response.
+PhantomAPI is an instruction-defined backend platform for teams that want to externalize application behavior, operational policy, and interface contracts into a structured documentation layer.
 
 The runtime stays intentionally thin.
 The framework surface stays explicit.
-The app model stays package-oriented.
-The behavior lives in the instruction system.
+The application model stays package-oriented.
+The orchestration intelligence lives where the platform expects it to live: in the instruction system.
 
 ## What Works Today
 
@@ -73,6 +73,26 @@ and where the boundary between specification and execution becomes pleasantly bl
 In PhantomAPI, the documentation is not an explanation of the system.
 
 It is the system.
+
+## Industry Context
+
+The software industry is currently experiencing a significant shift toward AI-mediated systems.
+
+Developers are experimenting with:
+
+- agent-assisted development
+- autonomous execution runtimes
+- instruction-driven platforms
+- documentation-as-code models
+- dynamic system orchestration
+
+PhantomAPI exists somewhere in the middle of that movement.
+
+Possibly slightly ahead of it.
+
+Or slightly beside it.
+
+Time will tell.
 
 ## Elevator Pitch
 
@@ -560,10 +580,20 @@ Invoke-RestMethod -Method Post -Uri http://localhost:5050/dynamic-api `
 
 ---
 
-<details>
-<summary><sub>Status, license, and legal notes</sub></summary>
+## Status
 
-PhantomAPI is experimental, functional, and intentionally opinionated.
+PhantomAPI is currently classified as:
+
+**strategically experimental but architecturally inevitable**
+
+<sub>PhantomAPI was also created to explore documentation-centric AI system design as a serious engineering discipline.</sub>
+
+<sub>This secondary research objective does not affect the framework model described above.</sub>
+
+<sub>The framework remains fully enterprise-ready in theory.</sub>
+
+<details>
+<summary><sub>License and legal notes</sub></summary>
 
 PhantomAPI is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
