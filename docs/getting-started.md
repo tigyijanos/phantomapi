@@ -13,16 +13,16 @@ The manual old-school way, for people who still insist on starting their own bac
 Start the API:
 
 ```bash
-dotnet run
+dotnet run --project src/PhantomApi/PhantomApi.csproj
 ```
 
 If port `5000` is already occupied, use the helper script:
 
 ```powershell
-.\run-local.ps1 -PreferredPort 5050
+.\scripts\run-local.ps1 -PreferredPort 5050
 ```
 
-The script checks whether the preferred port is free, selects the next available port when needed, and launches `dotnet run` there.
+The script checks whether the preferred port is free, selects the next available port when needed, and launches `dotnet run --project src/PhantomApi/PhantomApi.csproj` there.
 
 Example request:
 
@@ -56,9 +56,9 @@ Runtime endpoint:
 
 Compose persistence mounts:
 
-- `./data -> /app/data`
-- `./instructions -> /app/instructions`
-- `./AGENTS.md -> /app/AGENTS.md`
+- `./data -> /workspace/data`
+- `./instructions -> /workspace/instructions`
+- `./AGENTS.md -> /workspace/AGENTS.md`
 - `./.codex -> /root/.codex`
 
 This keeps state, observability output, instruction changes, and Codex authentication across container restarts and rebuilds.
@@ -91,7 +91,7 @@ Because `./.codex` is ignored by git, the container can persist local Codex cred
 
 ## Configuration
 
-Preferred configuration lives in `appsettings.json` under the `Phantom` section.
+Preferred configuration lives in `src/PhantomApi/appsettings.json` under the `Phantom` section.
 
 Core runtime settings:
 

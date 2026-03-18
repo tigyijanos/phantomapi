@@ -33,11 +33,12 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$projectPath = Join-Path $repoRoot "src\PhantomApi\PhantomApi.csproj"
 Set-Location $repoRoot
 
 if ($BuildFirst) {
-    dotnet build | Out-Host
+    dotnet build $projectPath | Out-Host
 }
 
 $tracePath = Join-Path $repoRoot "data\framework\traces\events.jsonl"
@@ -255,15 +256,15 @@ function Start-BenchmarkServer {
     )
 
     $job = Start-Job -ScriptBlock {
-        param($WorkingDirectory, $ServerUrl, $Overrides)
+        param($WorkingDirectory, $ProjectPath, $ServerUrl, $Overrides)
 
         Set-Location $WorkingDirectory
         foreach ($entry in $Overrides.GetEnumerator()) {
             Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
         }
 
-        dotnet run --no-build --urls $ServerUrl
-    } -ArgumentList $repoRoot, $Url, $EnvOverrides
+        dotnet run --project $ProjectPath --no-build --urls $ServerUrl
+    } -ArgumentList $repoRoot, $projectPath, $Url, $EnvOverrides
 
     return $job
 }

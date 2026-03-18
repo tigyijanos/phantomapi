@@ -133,13 +133,13 @@ Client JSON
 Run locally:
 
 ```bash
-dotnet run
+dotnet run --project src/PhantomApi/PhantomApi.csproj
 ```
 
 If port `5000` is already busy:
 
 ```powershell
-.\run-local.ps1 -PreferredPort 5050
+.\scripts\run-local.ps1 -PreferredPort 5050
 ```
 
 Example request:
@@ -173,10 +173,18 @@ The runtime acceleration layer is documented separately in [Runtime Acceleration
 
 - `instructions/framework`
   cross-app runtime law
+- `AGENTS.md`
+  repo workflow rules plus scoped runtime-agent rules
+- `.github/copilot-instructions.md`
+  repo-level Copilot/Codex workflow guidance
+- `src/PhantomApi`
+  backend application code, project file, Dockerfile, and app config
 - `instructions/apps/<app>`
   one packaged software system
 - `data/apps/<app>`
   live app state
+- `scripts/*`
+  local helper and benchmark automation
 - `data/framework/*`
   shared logs, traces, metrics, audit, and repair journals
 - `docs/*`
@@ -193,6 +201,8 @@ Current app packages:
 
 - [docs/getting-started.md](docs/getting-started.md)
   local run, Docker Compose, Codex auth, configuration
+- [docs/contributing/assistant-workflow.md](docs/contributing/assistant-workflow.md)
+  default assistant and contributor workflow for repo changes
 - [docs/positioning.md](docs/positioning.md)
   platform thesis, industry context, and product framing
 - [docs/use-cases.md](docs/use-cases.md)
@@ -209,6 +219,8 @@ Current app packages:
   repair, validation, rollback, and mutation governance
 - [docs/system-summary.md](docs/system-summary.md)
   concise platform summary, platform claims, and architectural philosophy
+- [docs/zerobackend-phantomapi-concept.md](docs/zerobackend-phantomapi-concept.md)
+  concept sketch and earlier framing notes
 
 ## Status
 

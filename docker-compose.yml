@@ -2,6 +2,7 @@ services:
   phantomapi:
     build:
       context: .
+      dockerfile: src/PhantomApi/Dockerfile
     container_name: phantomapi
     ports:
       - "8080:8080"
@@ -10,8 +11,8 @@ services:
       Phantom__CliCommand: codex
       Phantom__CliTimeoutSeconds: 300
     volumes:
-      - ./data:/app/data
-      - ./instructions:/app/instructions
-      - ./AGENTS.md:/app/AGENTS.md
+      - ./data:/workspace/data
+      - ./instructions:/workspace/instructions
+      - ./AGENTS.md:/workspace/AGENTS.md
       - ./.codex:/root/.codex
     restart: unless-stopped
