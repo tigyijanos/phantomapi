@@ -9,6 +9,39 @@ It exposes one HTTP ingress, routes by `app` and `endpoint`, and delegates runti
 In PhantomAPI, the documentation is not an explanation of the system.
 It is the system.
 
+## Platform Claims
+
+PhantomAPI is designed to look and behave like a real backend platform:
+
+- one gateway surface
+- one framework operating model
+- many application packages
+- explicit contract ownership
+- explicit storage interpretation
+- explicit runtime governance
+- explicit observability outputs
+- explicit error semantics
+
+The platform does not hide where its behavior comes from.
+It formalizes that behavior in a framework layer and expects apps to plug into it.
+
+## Architectural Philosophy
+
+PhantomAPI follows a simple architectural principle:
+
+if a system can be precisely described,
+it can probably be executed.
+
+The framework therefore focuses on:
+
+- strong documentation discipline
+- strict contract ownership
+- observable runtime decisions
+- explicit operational policy
+
+The implementation layer stays intentionally minimal.
+The instructions carry the weight.
+
 ## Runtime Shape
 
 - thin `.NET` Minimal API transport layer

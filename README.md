@@ -194,7 +194,7 @@ Current app packages:
 - [docs/getting-started.md](docs/getting-started.md)
   local run, Docker Compose, Codex auth, configuration
 - [docs/positioning.md](docs/positioning.md)
-  platform thesis and product framing
+  platform thesis, industry context, and product framing
 - [docs/use-cases.md](docs/use-cases.md)
   concrete backend package patterns
 - [docs/operating-model.md](docs/operating-model.md)
@@ -208,7 +208,7 @@ Current app packages:
 - [docs/self-healing.md](docs/self-healing.md)
   repair, validation, rollback, and mutation governance
 - [docs/system-summary.md](docs/system-summary.md)
-  concise platform summary and narrative backup
+  concise platform summary, platform claims, and architectural philosophy
 
 ## Status
 
