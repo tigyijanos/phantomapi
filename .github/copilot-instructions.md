@@ -9,6 +9,7 @@
 - Use non-interactive git commands.
 - When an AI assistant materially contributes to a commit, include a `Co-authored-by` trailer.
 - For Codex-authored changes, use `Co-authored-by: Codex <codex@openai.com>`.
+- The full repo-change flow is documented in `docs/contributing/assistant-workflow.md`.
 - Build with `dotnet build src/PhantomApi/PhantomApi.csproj`.
 - Run locally with `dotnet run --project src/PhantomApi/PhantomApi.csproj` or `.\scripts\run-local.ps1`.
 - Container entrypoint remains driven from `docker-compose.yml` plus `src/PhantomApi/Dockerfile`.

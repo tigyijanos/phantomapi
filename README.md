@@ -201,6 +201,8 @@ Current app packages:
 
 - [docs/getting-started.md](docs/getting-started.md)
   local run, Docker Compose, Codex auth, configuration
+- [docs/contributing/assistant-workflow.md](docs/contributing/assistant-workflow.md)
+  default assistant and contributor workflow for repo changes
 - [docs/positioning.md](docs/positioning.md)
   platform thesis, industry context, and product framing
 - [docs/use-cases.md](docs/use-cases.md)

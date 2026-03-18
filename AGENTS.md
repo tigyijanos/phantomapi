@@ -12,6 +12,7 @@ They do not apply when PhantomAPI is invoking Codex as the backend runtime for a
 - Use non-interactive git commands.
 - When an AI assistant materially contributed to a commit, add an assistant-specific `Co-authored-by` trailer.
 - For Codex-authored changes, use `Co-authored-by: Codex <codex@openai.com>`.
+- The detailed repo-change flow lives in `docs/contributing/assistant-workflow.md`.
 - Keep repo workflow guidance under `.github/` or top-level docs; keep backend runtime law under `instructions/` plus the scoped runtime section below.
 - The backend application code lives under `src/PhantomApi`.
 - Runtime assets remain at repo root under `instructions/` and `data/`.
