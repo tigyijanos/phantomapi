@@ -185,6 +185,8 @@ The runtime acceleration layer is documented separately in [Runtime Acceleration
   live app state
 - `scripts/*`
   local helper and benchmark automation
+- `benchmarks/*`
+  microbenchmarks for deterministic C# hotspots
 - `data/framework/*`
   shared logs, traces, metrics, audit, and repair journals
 - `docs/*`
@@ -213,6 +215,8 @@ Current app packages:
   feature catalog for the framework surface
 - [docs/runtime-acceleration.md](docs/runtime-acceleration.md)
   warm runtime strategy and prewarm metadata
+- [docs/benchmarking.md](docs/benchmarking.md)
+  BenchmarkDotNet microbenchmarks plus end-to-end latency harness
 - [docs/observability.md](docs/observability.md)
   operational surfaces and event shapes
 - [docs/self-healing.md](docs/self-healing.md)
