@@ -36,6 +36,7 @@ request
 When warm mode is enabled, PhantomAPI starts `codex app-server --listen stdio://` during app startup instead of waiting for the first request.
 
 This removes part of the first-hit process startup cost.
+The startup warm path is now hosted through the standard ASP.NET Core background-service lifecycle instead of ad hoc lifetime callbacks.
 
 ### Compiled Instruction-Bundle Cache
 
