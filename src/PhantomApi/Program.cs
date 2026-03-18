@@ -75,7 +75,6 @@ if (phantomOptions.WarmTurnGraceSeconds <= 0)
     phantomOptions.WarmTurnGraceSeconds = 4;
 }
 
-var app = builder.Build();
 var traceLogger = new TraceLogger(repoRoot);
 var instructionBundleCompiler = new InstructionBundleCompiler(repoRoot);
 var endpointContractCache = new EndpointContractCache(repoRoot);
@@ -86,19 +85,19 @@ var appServerClient = phantomOptions.UseWarmAppServer
     ? new CodexAppServerClient(phantomOptions, repoRoot, traceLogger)
     : null;
 
-app.Lifetime.ApplicationStarted.Register(() =>
-{
-    if (appServerClient is null || !phantomOptions.UseWarmAppServer)
+builder.Services.AddSingleton(new PhantomStartupWork(
+    appServerClient,
+    PrimeWarmRuntimeAsync: async cancellationToken =>
     {
-        return;
-    }
+        if (appServerClient is null || !phantomOptions.UseWarmAppServer)
+        {
+            return;
+        }
 
-    _ = Task.Run(async () =>
-    {
         var correlationId = $"startup_{Guid.NewGuid():N}";
         try
         {
-            await appServerClient.PrimeAsync(defaultProfile, correlationId, CancellationToken.None);
+            await appServerClient.PrimeAsync(defaultProfile, correlationId, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -118,12 +117,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
                     ["serviceTier"] = defaultProfile.ServiceTier ?? "default"
                 });
         }
-    });
-});
-
-app.Lifetime.ApplicationStarted.Register(() =>
-{
-    _ = Task.Run(() => WarmConfiguredEndpointsAsync(
+    },
+    WarmConfiguredEndpointsAsync: cancellationToken => WarmConfiguredEndpointsAsync(
         repoRoot,
         defaultProfile,
         phantomOptions,
@@ -131,13 +126,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
         instructionBundleCompiler,
         endpointContractCache,
         execSessionPool,
-        cliArgumentsTemplateWasProvided));
-});
+        cliArgumentsTemplateWasProvided,
+        cancellationToken)));
+builder.Services.AddHostedService<PhantomStartupHostedService>();
 
-app.Lifetime.ApplicationStopping.Register(() =>
-{
-    _ = appServerClient?.DisposeAsync().AsTask();
-});
+var app = builder.Build();
 
 app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancellationToken) =>
 {
@@ -626,7 +619,8 @@ static async Task WarmConfiguredEndpointsAsync(
     InstructionBundleCompiler instructionBundleCompiler,
     EndpointContractCache endpointContractCache,
     CodexExecSessionPool? execSessionPool,
-    bool cliArgumentsTemplateWasProvided)
+    bool cliArgumentsTemplateWasProvided,
+    CancellationToken cancellationToken)
 {
     var configuredWarmStarts = EndpointWarmStartCatalog.Discover(contentRootPath);
     if (configuredWarmStarts.Count == 0)
@@ -726,7 +720,7 @@ static async Task WarmConfiguredEndpointsAsync(
             }
 
             var execSessionKey = BuildExecSessionKey(target.AppId, target.Endpoint, profile, instructionBundle);
-            var existingSession = await execSessionPool.GetAsync(execSessionKey, CancellationToken.None);
+            var existingSession = await execSessionPool.GetAsync(execSessionKey, cancellationToken);
             if (existingSession is not null)
             {
                 await traceLogger.WriteEventAsync(
@@ -774,7 +768,7 @@ static async Task WarmConfiguredEndpointsAsync(
                 continue;
             }
 
-            var warmupRequest = await File.ReadAllTextAsync(warmupRequestPath);
+            var warmupRequest = await File.ReadAllTextAsync(warmupRequestPath, cancellationToken);
             await TraceStepAsyncResult(
                 traceLogger,
                 correlationId,
@@ -786,7 +780,7 @@ static async Task WarmConfiguredEndpointsAsync(
                     profile,
                     contentRootPath,
                     warmupRequest,
-                    CancellationToken.None,
+                    cancellationToken,
                     traceLogger,
                     correlationId,
                     target.AppId,
