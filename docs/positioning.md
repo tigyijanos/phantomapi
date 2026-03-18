@@ -7,6 +7,24 @@ Documentation is part of the executable operating model.
 
 Instead of treating docs as passive explanation, PhantomAPI treats the instruction layer as an active control plane for backend behavior.
 
+## Industry Context
+
+The software industry is in the middle of a shift toward AI-mediated systems.
+
+Teams are experimenting with:
+
+- agent-assisted development
+- autonomous execution runtimes
+- instruction-driven platforms
+- documentation-as-code models
+- dynamic system orchestration
+
+PhantomAPI sits in the middle of that movement.
+
+Possibly slightly ahead of it.
+Possibly slightly beside it.
+Time will tell.
+
 ## Strategic Thesis
 
 The platform thesis is straightforward:
@@ -17,6 +35,28 @@ The platform thesis is straightforward:
 - the API layer enforces response discipline
 
 This creates a backend model that is more package-oriented, more contract-explicit, and more operationally legible than an ad hoc collection of controllers and services.
+
+## Elevator Pitch
+
+PhantomAPI can be described as:
+
+- a documentation-native backend platform
+- an instruction-first application framework
+- a multi-app autonomous execution runtime
+- a contract-disciplined AI orchestration layer
+- an observability-rich backend operating model
+- a dynamic API surface for agent-mediated software systems
+
+The core premise is simple:
+define the framework precisely, package each application coherently, enforce contracts aggressively, and let the runtime execute from that declared system of truth.
+
+## Why Teams Look At It
+
+- collapse behavioral intent, policies, and interface expectations into a single package model
+- reduce controller and service sprawl behind a stable gateway surface
+- standardize how apps expose contracts, storage rules, and operational posture
+- enable one runtime to host many distinct application packages
+- make observability, governance, and response discipline part of the framework itself
 
 ## Product Language
 
