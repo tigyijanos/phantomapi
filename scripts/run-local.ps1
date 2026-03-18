@@ -4,8 +4,9 @@ param(
     [int]$SearchEnd = 5099
 )
 
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $projectRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$projectPath = Join-Path $repoRoot "src\PhantomApi\PhantomApi.csproj"
+Set-Location $repoRoot
 
 function Get-PortOwner([int]$Port)
 {
@@ -67,4 +68,4 @@ if ($PreferredPort -eq $selectedPort -and $preferredOwner -ne "free")
 Write-Host "Starting PhantomAPI locally on http://localhost:$selectedPort ..."
 Write-Host "Request sample: Invoke-RestMethod -Method Post -Uri http://localhost:$selectedPort/dynamic-api -ContentType application/json -Body (Get-Content instructions/apps/task-board/.examples/login.json -Raw)"
 
-dotnet run --project . --urls "http://localhost:$selectedPort"
+dotnet run --project $projectPath --urls "http://localhost:$selectedPort"

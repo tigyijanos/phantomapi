@@ -5,6 +5,10 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
+var repoRoot = RepoRootLocator.Resolve(
+    builder.Environment.ContentRootPath,
+    Directory.GetCurrentDirectory(),
+    AppContext.BaseDirectory);
 
 var phantomOptions = new PhantomOptions();
 builder.Configuration.GetSection("Phantom").Bind(phantomOptions);
@@ -72,14 +76,14 @@ if (phantomOptions.WarmTurnGraceSeconds <= 0)
 }
 
 var app = builder.Build();
-var traceLogger = new TraceLogger(app.Environment.ContentRootPath);
-var instructionBundleCompiler = new InstructionBundleCompiler(app.Environment.ContentRootPath);
-var endpointContractCache = new EndpointContractCache(app.Environment.ContentRootPath);
+var traceLogger = new TraceLogger(repoRoot);
+var instructionBundleCompiler = new InstructionBundleCompiler(repoRoot);
+var endpointContractCache = new EndpointContractCache(repoRoot);
 var execSessionPool = phantomOptions.UseExecSessionPool
-    ? new CodexExecSessionPool(app.Environment.ContentRootPath)
+    ? new CodexExecSessionPool(repoRoot)
     : null;
 var appServerClient = phantomOptions.UseWarmAppServer
-    ? new CodexAppServerClient(phantomOptions, app.Environment.ContentRootPath, traceLogger)
+    ? new CodexAppServerClient(phantomOptions, repoRoot, traceLogger)
     : null;
 
 app.Lifetime.ApplicationStarted.Register(() =>
@@ -120,7 +124,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     _ = Task.Run(() => WarmConfiguredEndpointsAsync(
-        app.Environment.ContentRootPath,
+        repoRoot,
         defaultProfile,
         phantomOptions,
         traceLogger,
@@ -135,7 +139,7 @@ app.Lifetime.ApplicationStopping.Register(() =>
     _ = appServerClient?.DisposeAsync().AsTask();
 });
 
-app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment environment, CancellationToken cancellationToken) =>
+app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancellationToken) =>
 {
     var correlationId = $"corr_{Guid.NewGuid():N}";
     var requestTimer = Stopwatch.StartNew();
@@ -353,7 +357,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment envi
                         () => InvokeCliAsync(
                             phantomOptions,
                             runtimeProfile,
-                            environment.ContentRootPath,
+                            repoRoot,
                             rawRequest,
                             cancellationToken,
                             traceLogger,
@@ -384,7 +388,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, IWebHostEnvironment envi
                     () => InvokeCliAsync(
                         phantomOptions,
                         runtimeProfile,
-                        environment.ContentRootPath,
+                        repoRoot,
                         rawRequest,
                         cancellationToken,
                         traceLogger,

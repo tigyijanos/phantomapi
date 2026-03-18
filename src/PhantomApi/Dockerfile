@@ -7,9 +7,9 @@ RUN apt-get update \
     && npm install -g @openai/codex \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /workspace
 COPY . .
-RUN dotnet publish -c Release -o /app/out
+RUN dotnet publish src/PhantomApi/PhantomApi.csproj -c Release -o /app/out
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
