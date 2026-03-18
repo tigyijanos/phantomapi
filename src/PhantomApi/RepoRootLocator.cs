@@ -33,8 +33,7 @@ static class RepoRootLocator
         while (directory is not null)
         {
             if (Directory.Exists(Path.Combine(directory.FullName, "instructions")) &&
-                Directory.Exists(Path.Combine(directory.FullName, "data")) &&
-                File.Exists(Path.Combine(directory.FullName, "README.md")))
+                Directory.Exists(Path.Combine(directory.FullName, "data")))
             {
                 return directory.FullName;
             }
