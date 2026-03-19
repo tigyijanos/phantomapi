@@ -23,16 +23,28 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "userId": 10,
-  "tasks": [
-    {
-      "taskId": 100,
-      "title": "Prepare backlog",
-      "description": "Collect the next iteration items.",
-      "status": "open"
-    }
-  ],
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "userId": { "type": "integer" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "integer" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" }
+        },
+        "required": ["taskId", "title", "description", "status"],
+        "additionalProperties": false
+      }
+    },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "userId", "tasks", "error"],
+  "additionalProperties": false
 }
 ```
