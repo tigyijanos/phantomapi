@@ -440,28 +440,7 @@ sealed class CodexAppServerClient : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(outputSchemaJson))
         {
             using var outputSchema = JsonDocument.Parse(outputSchemaJson);
-            if (JsonSchemaUtilities.LooksLikeJsonSchema(outputSchema.RootElement))
-            {
-                turnParams["outputSchema"] = outputSchema.RootElement.Clone();
-            }
-            else
-            {
-                using var derivedSchema = JsonDocument.Parse(JsonSchemaUtilities.NormalizeToSchemaJson(outputSchema.RootElement));
-                turnParams["outputSchema"] = derivedSchema.RootElement.Clone();
-                _ = _traceLogger.WriteEventAsync(
-                    correlationId,
-                    appId,
-                    endpoint,
-                    "appserver.output-schema.derived",
-                    "info",
-                    null,
-                    detail: "Derived JSON Schema from response contract example.",
-                    metadata: new()
-                    {
-                        ["method"] = "turn.start",
-                        ["reason"] = "contract-example"
-                    });
-            }
+            turnParams["outputSchema"] = outputSchema.RootElement.Clone();
         }
 
         using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

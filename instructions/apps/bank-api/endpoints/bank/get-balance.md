@@ -24,11 +24,17 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "userId": 1,
-  "accountNumber": "HU100000000000000000000001",
-  "currency": "HUF",
-  "balance": 1500,
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "userId": { "type": "integer" },
+    "accountNumber": { "type": "string" },
+    "currency": { "type": "string" },
+    "balance": { "type": "number" },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "userId", "accountNumber", "currency", "balance", "error"],
+  "additionalProperties": false
 }
 ```

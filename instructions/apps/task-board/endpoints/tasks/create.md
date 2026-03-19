@@ -27,12 +27,18 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "taskId": 101,
-  "userId": 10,
-  "title": "Prepare backlog",
-  "description": "Collect the next iteration items.",
-  "status": "open",
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "taskId": { "type": "integer" },
+    "userId": { "type": "integer" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "status": { "type": "string" },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "taskId", "userId", "title", "description", "status", "error"],
+  "additionalProperties": false
 }
 ```

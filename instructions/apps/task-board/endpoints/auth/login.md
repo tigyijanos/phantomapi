@@ -32,11 +32,17 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "token": "session_123",
-  "userId": 10,
-  "fullName": "Taylor Example",
-  "expiresAt": "2026-03-15T12:00:00Z",
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "token": { "type": "string" },
+    "userId": { "type": "integer" },
+    "fullName": { "type": "string" },
+    "expiresAt": { "type": "string" },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "token", "userId", "fullName", "expiresAt", "error"],
+  "additionalProperties": false
 }
 ```

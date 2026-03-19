@@ -30,13 +30,19 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "userId": 1,
-  "sourceAccountNumber": "HU100000000000000000000001",
-  "targetAccountNumber": "HU100000000000000000000002",
-  "amount": 200,
-  "sourceBalance": 1300,
-  "message": "Transfer completed.",
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "userId": { "type": "integer" },
+    "sourceAccountNumber": { "type": "string" },
+    "targetAccountNumber": { "type": "string" },
+    "amount": { "type": "number" },
+    "sourceBalance": { "type": "number" },
+    "message": { "type": "string" },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "userId", "sourceAccountNumber", "targetAccountNumber", "amount", "sourceBalance", "message", "error"],
+  "additionalProperties": false
 }
 ```

@@ -238,8 +238,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
             {
                 ["routeKey"] = resolvedContract.RouteKey,
                 ["cacheHit"] = resolvedContract.CacheHit,
-                ["sourcePath"] = resolvedContract.SourcePath.Replace('\\', '/'),
-                ["outputSchemaDerived"] = resolvedContract.OutputSchemaWasDerived
+                ["sourcePath"] = resolvedContract.SourcePath.Replace('\\', '/')
             });
 
         var fastMode = await TraceStepAsyncResult(
