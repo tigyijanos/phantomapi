@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Json.Schema;
+using CodexCliExecutionResult = (string RawResponse, string? SessionId);
+using RuntimeProfile = (string Model, string ReasoningEffort, string? ServiceTier);
 
 var builder = WebApplication.CreateBuilder(args);
 var repoRoot = RepoRootLocator.Resolve(
@@ -86,19 +88,21 @@ var appServerClient = phantomOptions.UseWarmAppServer
     ? new CodexAppServerClient(phantomOptions, repoRoot, traceLogger)
     : null;
 
-builder.Services.AddSingleton(new PhantomStartupWork(
-    appServerClient,
-    PrimeWarmRuntimeAsync: async cancellationToken =>
-    {
-        if (appServerClient is null || !phantomOptions.UseWarmAppServer)
-        {
-            return;
-        }
+var app = builder.Build();
 
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (appServerClient is null || !phantomOptions.UseWarmAppServer)
+    {
+        return;
+    }
+
+    _ = Task.Run(async () =>
+    {
         var correlationId = $"startup_{Guid.NewGuid():N}";
         try
         {
-            await appServerClient.PrimeAsync(defaultProfile, correlationId, cancellationToken);
+            await appServerClient.PrimeAsync(defaultProfile, correlationId, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -118,8 +122,12 @@ builder.Services.AddSingleton(new PhantomStartupWork(
                     ["serviceTier"] = defaultProfile.ServiceTier ?? "default"
                 });
         }
-    },
-    WarmConfiguredEndpointsAsync: cancellationToken => WarmConfiguredEndpointsAsync(
+    });
+});
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(() => WarmConfiguredEndpointsAsync(
         repoRoot,
         defaultProfile,
         phantomOptions,
@@ -128,10 +136,13 @@ builder.Services.AddSingleton(new PhantomStartupWork(
         endpointContractCache,
         execSessionPool,
         cliArgumentsTemplateWasProvided,
-        cancellationToken)));
-builder.Services.AddHostedService<PhantomStartupHostedService>();
+        CancellationToken.None));
+});
 
-var app = builder.Build();
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    _ = appServerClient?.DisposeAsync().AsTask();
+});
 
 app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancellationToken) =>
 {
@@ -1204,7 +1215,7 @@ static async Task<CodexCliExecutionResult> InvokeCliProcessAsync(
                 ["parsedSessionId"] = parsedSessionId
             });
 
-        return new CodexCliExecutionResult(rawResponse, parsedSessionId);
+        return (RawResponse: rawResponse, SessionId: parsedSessionId);
     }
     catch (Exception ex)
     {
