@@ -317,6 +317,37 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
             ? BuildExecSessionKey(appId, endpoint, runtimeProfile, instructionBundle)
             : null;
 
+        Task<string> ExecuteColdAsync()
+        {
+            return TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                appId,
+                endpoint,
+                "codex.exec.cold",
+                () => InvokeCliAsync(
+                    phantomOptions,
+                    runtimeProfile,
+                    repoRoot,
+                    rawRequest,
+                    cancellationToken,
+                    traceLogger,
+                    correlationId,
+                    appId,
+                    endpoint,
+                    instructionBundle,
+                    execSessionKey,
+                    execSessionPool,
+                    cliArgumentsTemplateWasProvided),
+                null,
+                new()
+                {
+                    ["mode"] = "cold",
+                    ["model"] = runtimeProfile.Model,
+                    ["reasoningEffort"] = runtimeProfile.ReasoningEffort
+                });
+        }
+
         string cliRawResponse;
         try
         {
@@ -351,64 +382,12 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
                         detail: "warm execution failed, falling back to cold execution",
                         metadata: new() { ["error"] = Truncate(ex.Message, 240) });
 
-                    cliRawResponse = await TraceStepAsyncResult(
-                        traceLogger,
-                        correlationId,
-                        appId,
-                        endpoint,
-                        "codex.exec.cold",
-                        () => InvokeCliAsync(
-                            phantomOptions,
-                            runtimeProfile,
-                            repoRoot,
-                            rawRequest,
-                            cancellationToken,
-                            traceLogger,
-                            correlationId,
-                            appId,
-                            endpoint,
-                            instructionBundle,
-                            execSessionKey,
-                            execSessionPool,
-                            cliArgumentsTemplateWasProvided),
-                        null,
-                        new()
-                        {
-                            ["mode"] = "cold",
-                            ["model"] = runtimeProfile.Model,
-                            ["reasoningEffort"] = runtimeProfile.ReasoningEffort
-                        });
+                    cliRawResponse = await ExecuteColdAsync();
                 }
             }
             else
             {
-                cliRawResponse = await TraceStepAsyncResult(
-                    traceLogger,
-                    correlationId,
-                    appId,
-                    endpoint,
-                    "codex.exec.cold",
-                    () => InvokeCliAsync(
-                        phantomOptions,
-                        runtimeProfile,
-                        repoRoot,
-                        rawRequest,
-                        cancellationToken,
-                        traceLogger,
-                        correlationId,
-                        appId,
-                        endpoint,
-                        instructionBundle,
-                        execSessionKey,
-                        execSessionPool,
-                        cliArgumentsTemplateWasProvided),
-                    null,
-                    new()
-                    {
-                        ["mode"] = "cold",
-                        ["model"] = runtimeProfile.Model,
-                        ["reasoningEffort"] = runtimeProfile.ReasoningEffort
-                    });
+                cliRawResponse = await ExecuteColdAsync();
             }
         }
         catch (Exception ex)
@@ -646,6 +625,21 @@ static async Task WarmConfiguredEndpointsAsync(
     foreach (var target in configuredWarmStarts)
     {
         var correlationId = $"warmstart_{Guid.NewGuid():N}";
+        Task WriteWarmStartSkipAsync(string detail, Dictionary<string, object?>? metadata = null)
+        {
+            metadata ??= new Dictionary<string, object?>();
+            metadata["mode"] = target.WarmStart.Mode;
+            return traceLogger.WriteEventAsync(
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.exec-session",
+                "skipped",
+                null,
+                detail: detail,
+                metadata: metadata);
+        }
+
         try
         {
             var resolvedContract = await TraceStepAsyncResult(
@@ -694,43 +688,19 @@ static async Task WarmConfiguredEndpointsAsync(
 
             if (execSessionPool is null || !options.UseExecSessionPool)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because the exec session pool is disabled.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because the exec session pool is disabled.");
                 continue;
             }
 
             if (cliArgumentsTemplateWasProvided)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because a custom CliArgumentsTemplate is configured.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because a custom CliArgumentsTemplate is configured.");
                 continue;
             }
 
             if (!target.WarmStart.ReadOnlyWarmup)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because the endpoint is not marked as readonly-safe for startup warmup.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because the endpoint is not marked as readonly-safe for startup warmup.");
                 continue;
             }
 
@@ -738,15 +708,9 @@ static async Task WarmConfiguredEndpointsAsync(
             var existingSession = await execSessionPool.GetAsync(execSessionKey, cancellationToken);
             if (existingSession is not null)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because a compatible stored session already exists.",
-                    metadata: new()
+                await WriteWarmStartSkipAsync(
+                    "Exec-session warm start skipped because a compatible stored session already exists.",
+                    new()
                     {
                         ["sessionKey"] = execSessionKey,
                         ["sessionId"] = existingSession.SessionId
@@ -756,15 +720,7 @@ static async Task WarmConfiguredEndpointsAsync(
 
             if (string.IsNullOrWhiteSpace(target.WarmStart.WarmupRequest))
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because no warmupRequest is configured.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because no warmupRequest is configured.");
                 continue;
             }
 
