@@ -65,7 +65,7 @@ var defaultProfile = ResolveRuntimeProfile(phantomOptions, phantomOptions.FastMo
 
 if (string.IsNullOrWhiteSpace(phantomOptions.CliArgumentsTemplate))
 {
-    phantomOptions.CliArgumentsTemplate = CodexCliExecutor.BuildCliArgumentsTemplate(phantomOptions, defaultProfile);
+    phantomOptions.CliArgumentsTemplate = CodexCliExecutor.BuildCliArgumentsTemplate(defaultProfile);
 }
 
 if (phantomOptions.CliTimeoutSeconds <= 0)
@@ -859,8 +859,7 @@ static async Task<string> InvokeCliAsync(
             cancellationToken,
             traceLogger,
             correlationId,
-            resumeSessionId: null,
-            allowEarlyTermination: true);
+            resumeSessionId: null);
         return directResult.RawResponse;
     }
 
@@ -885,8 +884,7 @@ static async Task<string> InvokeCliAsync(
             cancellationToken,
             traceLogger,
             correlationId,
-            resumeSessionId: null,
-            allowEarlyTermination: true);
+            resumeSessionId: null);
         return busyFallbackResult.RawResponse;
     }
 
@@ -918,8 +916,7 @@ static async Task<string> InvokeCliAsync(
                 cancellationToken,
                 traceLogger,
                 correlationId,
-                resumeSessionId: storedSession.SessionId,
-                allowEarlyTermination: true);
+                resumeSessionId: storedSession.SessionId);
             return resumedResult.RawResponse;
         }
         catch (Exception ex) when (LooksLikeInvalidResumeSession(ex.Message))
@@ -963,8 +960,7 @@ static async Task<string> InvokeCliAsync(
         cancellationToken,
         traceLogger,
         correlationId,
-        resumeSessionId: null,
-        allowEarlyTermination: false);
+        resumeSessionId: null);
 
     if (!string.IsNullOrWhiteSpace(freshResult.SessionId))
     {

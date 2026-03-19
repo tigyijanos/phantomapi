@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using RuntimeProfile = (string Model, string ReasoningEffort, string? ServiceTier);
 using CodexCliExecutionResult = (string RawResponse, string? SessionId);
@@ -15,14 +14,12 @@ static class CodexCliExecutor
         CancellationToken cancellationToken,
         TraceLogger traceLogger,
         string correlationId,
-        string? resumeSessionId,
-        bool allowEarlyTermination)
+        string? resumeSessionId)
     {
         var stopwatch = Stopwatch.StartNew();
-        var outputPath = Path.Combine(Path.GetTempPath(), $"phantomapi-{Guid.NewGuid():N}.json");
         var arguments = resumeSessionId is null
-            ? TokenizeArguments(BuildCliArgumentsTemplate(options, profile).Replace("{output}", QuoteArgument(outputPath)))
-            : BuildResumeCliArguments(profile, outputPath, resumeSessionId);
+            ? TokenizeArguments(BuildCliArgumentsTemplate(profile))
+            : BuildResumeCliArguments(profile, resumeSessionId);
 
         var startInfo = new ProcessStartInfo
         {
@@ -63,8 +60,7 @@ static class CodexCliExecutor
                     ["model"] = profile.Model,
                     ["reasoningEffort"] = profile.ReasoningEffort,
                     ["serviceTier"] = profile.ServiceTier ?? "default",
-                    ["resumeSessionId"] = resumeSessionId,
-                    ["allowEarlyTermination"] = allowEarlyTermination
+                    ["resumeSessionId"] = resumeSessionId
                 });
 
             await process.StandardInput.WriteAsync(rawRequest);
@@ -77,41 +73,16 @@ static class CodexCliExecutor
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.CliTimeoutSeconds));
             var waitForExitTask = process.WaitForExitAsync(timeoutCts.Token);
-            var waitForOutputTask = WaitForOutputFileAsync(outputPath, timeoutCts.Token);
-            string? earlyOutput = null;
 
             try
             {
-                var completedTask = await Task.WhenAny(waitForExitTask, waitForOutputTask);
-                if (completedTask == waitForOutputTask)
-                {
-                    earlyOutput = await waitForOutputTask;
-                    await traceLogger.WriteEventAsync(
-                        correlationId,
-                        null,
-                        null,
-                        "codex.exec.cold.output-ready",
-                        "success",
-                        stopwatch.ElapsedMilliseconds,
-                        metadata: new()
-                        {
-                            ["rawResponseLength"] = earlyOutput.Length,
-                            ["resumeSessionId"] = resumeSessionId
-                        });
-
-                    if (allowEarlyTermination && !process.HasExited)
-                    {
-                        TryTerminateProcess(process);
-                    }
-                }
-
                 await waitForExitTask;
             }
             catch (OperationCanceledException)
             {
                 if (!process.HasExited)
                 {
-                    TryTerminateProcess(process);
+                    TryKillProcess(process);
                 }
 
                 var partialStdout = (await stdoutTask).Trim();
@@ -124,24 +95,9 @@ static class CodexCliExecutor
 
             var stdout = (await stdoutTask).Trim();
             var stderr = (await stderrTask).Trim();
+            var responsePayload = stdout;
 
-            string responsePayload;
-            if (!string.IsNullOrWhiteSpace(earlyOutput))
-            {
-                responsePayload = earlyOutput;
-                TryDeleteFile(outputPath);
-            }
-            else if (File.Exists(outputPath))
-            {
-                responsePayload = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
-                TryDeleteFile(outputPath);
-            }
-            else
-            {
-                responsePayload = stdout;
-            }
-
-            if (string.IsNullOrWhiteSpace(earlyOutput) && process.ExitCode != 0)
+            if (string.IsNullOrWhiteSpace(responsePayload) && process.ExitCode != 0)
             {
                 var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail) ? $"CLI exited with code {process.ExitCode}." : detail);
@@ -165,6 +121,7 @@ static class CodexCliExecutor
                     ["exitCode"] = process.ExitCode,
                     ["rawResponseLength"] = responsePayload.Length,
                     ["resumeSessionId"] = resumeSessionId,
+                    ["responseSource"] = "stdout",
                     ["parsedSessionId"] = parsedSessionId
                 });
 
@@ -193,7 +150,7 @@ static class CodexCliExecutor
         }
     }
 
-    public static string BuildCliArgumentsTemplate(PhantomOptions options, RuntimeProfile profile)
+    public static string BuildCliArgumentsTemplate(RuntimeProfile profile)
     {
         var arguments = new List<string>
         {
@@ -204,15 +161,13 @@ static class CodexCliExecutor
             "-c",
             $"model_reasoning_effort={profile.ReasoningEffort}",
             "--skip-git-repo-check",
-            "--output-last-message",
-            "{output}",
             "-"
         };
 
         return string.Join(' ', arguments.Select(QuoteArgument));
     }
 
-    private static List<string> BuildResumeCliArguments(RuntimeProfile profile, string outputPath, string sessionId)
+    private static List<string> BuildResumeCliArguments(RuntimeProfile profile, string sessionId)
     {
         return
         [
@@ -224,8 +179,6 @@ static class CodexCliExecutor
             "-c",
             $"model_reasoning_effort={profile.ReasoningEffort}",
             "--skip-git-repo-check",
-            "--output-last-message",
-            outputPath,
             sessionId,
             "-"
         ];
@@ -303,69 +256,7 @@ static class CodexCliExecutor
         return $"Last CLI activity: {Truncate(lastLine, 240)}";
     }
 
-    private static async Task<string> WaitForOutputFileAsync(string outputPath, CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var candidate = TryReadCompletedJsonFile(outputPath);
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
-
-            await Task.Delay(150, cancellationToken);
-        }
-
-        throw new OperationCanceledException(cancellationToken);
-    }
-
-    private static string? TryReadCompletedJsonFile(string outputPath)
-    {
-        if (!File.Exists(outputPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            var raw = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                return null;
-            }
-
-            using var _ = JsonDocument.Parse(raw);
-            return raw;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static void TryDeleteFile(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static void TryTerminateProcess(Process process)
+    private static void TryKillProcess(Process process)
     {
         try
         {
