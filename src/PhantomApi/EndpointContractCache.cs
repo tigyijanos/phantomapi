@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Json.Schema;
 
 sealed class EndpointContractCache
 {
@@ -34,13 +35,13 @@ sealed class EndpointContractCache
         var responseContract = responseContractDocument.RootElement.Clone();
         var outputSchemaWasDerived = !JsonSchemaUtilities.LooksLikeJsonSchema(responseContract);
         var outputSchemaJson = JsonSchemaUtilities.NormalizeToSchemaJson(responseContract);
+        var outputSchema = JsonSchema.FromText(outputSchemaJson);
 
         var contract = new ResolvedEndpointContract(
             routeKey,
             sourcePath,
-            responseContractJson!,
-            responseContract,
             outputSchemaJson,
+            outputSchema,
             outputSchemaWasDerived,
             CacheHit: false);
 
@@ -109,8 +110,7 @@ sealed class EndpointContractCache
 sealed record ResolvedEndpointContract(
     string RouteKey,
     string SourcePath,
-    string ResponseContractJson,
-    JsonElement ResponseContract,
     string OutputSchemaJson,
+    JsonSchema OutputSchema,
     bool OutputSchemaWasDerived,
     bool CacheHit);

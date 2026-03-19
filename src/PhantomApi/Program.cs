@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Json.Schema;
 
 var builder = WebApplication.CreateBuilder(args);
 var repoRoot = RepoRootLocator.Resolve(
@@ -225,7 +226,6 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
                 ["routeKey"] = $"{appId}:{endpoint}"
             });
 
-        var responseContractJson = resolvedContract.ResponseContractJson;
         await traceLogger.WriteEventAsync(
             correlationId,
             appId,
@@ -418,23 +418,28 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
 
         using var cliResponseCleanup = cliResponse;
 
-        var contractMatch = await TraceStepAsyncResult(
+        var schemaValidation = await TraceStepAsyncResult(
             traceLogger,
             correlationId,
             appId,
             endpoint,
-            "response.contract-match",
+            "response.schema-validate",
             () =>
             {
-                var match = MatchesContract(resolvedContract.ResponseContract, cliResponse.RootElement, "$", out var contractError);
-                return Task.FromResult((match, contractError));
+                var evaluation = resolvedContract.OutputSchema.Evaluate(
+                    cliResponse.RootElement,
+                    new EvaluationOptions
+                    {
+                        OutputFormat = OutputFormat.List
+                    });
+                return Task.FromResult((evaluation.IsValid, evaluation));
             },
             null,
             new() { ["path"] = "/dynamic-api" });
 
-        if (!contractMatch.match)
+        if (!schemaValidation.IsValid)
         {
-            return BuildProblem("CLI response failed the hard guard.", contractMatch.contractError, 502);
+            return BuildProblem("CLI response failed the hard guard.", BuildSchemaValidationError(schemaValidation.evaluation), 502);
         }
 
         await traceLogger.WriteEventAsync(
@@ -1434,93 +1439,36 @@ static string Truncate(string value, int maxLength)
     return value[..(maxLength - 3)] + "...";
 }
 
-static bool MatchesContract(JsonElement contract, JsonElement response, string path, out string? error)
+static string BuildSchemaValidationError(EvaluationResults evaluation)
 {
-    if (contract.ValueKind == JsonValueKind.Null)
-    {
-        if (response.ValueKind == JsonValueKind.Null)
-        {
-            error = null;
-            return true;
-        }
+    var errors = new List<string>();
+    CollectSchemaErrors(evaluation, errors);
 
-        error = $"{path} must be null, got {response.ValueKind}.";
-        return false;
-    }
-
-    if (contract.ValueKind == JsonValueKind.Object)
-    {
-        if (response.ValueKind != JsonValueKind.Object)
-        {
-            error = $"{path} must be an object, got {response.ValueKind}.";
-            return false;
-        }
-
-        foreach (var contractProperty in contract.EnumerateObject())
-        {
-            if (!response.TryGetProperty(contractProperty.Name, out var responseProperty))
-            {
-                error = $"{path} is missing property '{contractProperty.Name}'.";
-                return false;
-            }
-
-            if (!MatchesContract(contractProperty.Value, responseProperty, $"{path}.{contractProperty.Name}", out error))
-            {
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
-    }
-
-    if (contract.ValueKind == JsonValueKind.Array)
-    {
-        if (response.ValueKind != JsonValueKind.Array)
-        {
-            error = $"{path} must be an array, got {response.ValueKind}.";
-            return false;
-        }
-
-        var itemTemplate = contract.EnumerateArray().FirstOrDefault();
-        foreach (var responseItem in response.EnumerateArray())
-        {
-            if (itemTemplate.ValueKind == JsonValueKind.Undefined)
-            {
-                break;
-            }
-
-            if (!MatchesContract(itemTemplate, responseItem, $"{path}[]", out error))
-            {
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
-    }
-
-    if (!KindsMatch(contract.ValueKind, response.ValueKind))
-    {
-        error = $"{path} type mismatch, expected {contract.ValueKind}, got {response.ValueKind}.";
-        return false;
-    }
-
-    error = null;
-    return true;
+    return errors.Count == 0
+        ? "The response did not match the output schema."
+        : string.Join(" | ", errors.Take(5));
 }
 
-static bool KindsMatch(JsonValueKind expected, JsonValueKind actual)
+static void CollectSchemaErrors(EvaluationResults evaluation, List<string> errors)
 {
-    if (expected is JsonValueKind.True or JsonValueKind.False)
+    if (evaluation.Errors is not null)
     {
-        return actual is JsonValueKind.True or JsonValueKind.False;
+        foreach (var entry in evaluation.Errors)
+        {
+            var location = string.IsNullOrWhiteSpace(evaluation.InstanceLocation.ToString())
+                ? "$"
+                : evaluation.InstanceLocation.ToString();
+            errors.Add($"{location}: {entry.Value}");
+        }
     }
 
-    if (expected == actual)
+    if (evaluation.Details is null)
     {
-        return true;
+        return;
     }
 
-    return false;
+    foreach (var detail in evaluation.Details)
+    {
+        CollectSchemaErrors(detail, errors);
+    }
 }
