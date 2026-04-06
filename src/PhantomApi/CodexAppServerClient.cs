@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using RuntimeProfile = (string Model, string ReasoningEffort, string? ServiceTier);
 
 sealed class CodexAppServerClient : IAsyncDisposable
 {
@@ -440,28 +441,7 @@ sealed class CodexAppServerClient : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(outputSchemaJson))
         {
             using var outputSchema = JsonDocument.Parse(outputSchemaJson);
-            if (JsonSchemaUtilities.LooksLikeJsonSchema(outputSchema.RootElement))
-            {
-                turnParams["outputSchema"] = outputSchema.RootElement.Clone();
-            }
-            else
-            {
-                using var derivedSchema = JsonDocument.Parse(JsonSchemaUtilities.NormalizeToSchemaJson(outputSchema.RootElement));
-                turnParams["outputSchema"] = derivedSchema.RootElement.Clone();
-                _ = _traceLogger.WriteEventAsync(
-                    correlationId,
-                    appId,
-                    endpoint,
-                    "appserver.output-schema.derived",
-                    "info",
-                    null,
-                    detail: "Derived JSON Schema from response contract example.",
-                    metadata: new()
-                    {
-                        ["method"] = "turn.start",
-                        ["reason"] = "contract-example"
-                    });
-            }
+            turnParams["outputSchema"] = outputSchema.RootElement.Clone();
         }
 
         using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -693,63 +673,74 @@ sealed class CodexAppServerClient : IAsyncDisposable
             return;
         }
 
-        var codexEventType = method.StartsWith("codex/event/", StringComparison.Ordinal)
-            ? method["codex/event/".Length..]
-            : null;
-        if (!string.IsNullOrWhiteSpace(codexEventType))
+        if (TryResolveSemanticEventType(root, method, out var semanticEventType))
         {
-            if (codexEventType is "task_complete" or "task/complete")
-            {
-                HandleTaskComplete(root);
-            }
-            else if (codexEventType is "agent_message")
-            {
-                HandleAgentMessageEvent(root);
-            }
-            else if (codexEventType is "agent_message_delta" or "agent_message_content_delta")
-            {
-                HandleAgentMessageDelta(root);
-            }
-            else if (codexEventType is "raw_response_item")
-            {
-                HandleRawResponseItem(root);
-            }
-
+            DispatchSemanticEvent(semanticEventType, root);
             return;
         }
+    }
 
-        if (method == "event")
-        {
-            if (root.TryGetProperty("params", out var eventParamsElement) &&
-                eventParamsElement.ValueKind == JsonValueKind.Object &&
-                eventParamsElement.TryGetProperty("type", out var eventTypeElement) &&
-                eventTypeElement.ValueKind == JsonValueKind.String)
-            {
-                var eventType = eventTypeElement.GetString();
-                if (eventType is "task_complete" or "task/complete")
-                {
-                    HandleTaskComplete(root);
-                }
-                else if (eventType is "agent_message")
-                {
-                    HandleAgentMessageEvent(root);
-                }
-                else if (eventType is "agent_message_delta" or "agent_message_content_delta")
-                {
-                    HandleAgentMessageDelta(root);
-                }
-                else if (eventType is "raw_response_item")
-                {
-                    HandleRawResponseItem(root);
-                }
-            }
-
-            return;
-        }
+    private static bool TryResolveSemanticEventType(JsonElement message, string method, out string semanticEventType)
+    {
+        semanticEventType = string.Empty;
 
         if (method is "task/complete" or "task_complete")
         {
-            HandleTaskComplete(root);
+            semanticEventType = "task_complete";
+            return true;
+        }
+
+        if (method.StartsWith("codex/event/", StringComparison.Ordinal))
+        {
+            return TryNormalizeSemanticEventType(method["codex/event/".Length..], out semanticEventType);
+        }
+
+        if (!string.Equals(method, "event", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!message.TryGetProperty("params", out var eventParamsElement) ||
+            eventParamsElement.ValueKind != JsonValueKind.Object ||
+            !eventParamsElement.TryGetProperty("type", out var eventTypeElement) ||
+            eventTypeElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        return TryNormalizeSemanticEventType(eventTypeElement.GetString(), out semanticEventType);
+    }
+
+    private static bool TryNormalizeSemanticEventType(string? rawEventType, out string semanticEventType)
+    {
+        semanticEventType = rawEventType switch
+        {
+            "task/complete" or "task_complete" => "task_complete",
+            "agent_message" => "agent_message",
+            "agent_message_delta" or "agent_message_content_delta" => "agent_message_delta",
+            "raw_response_item" => "raw_response_item",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(semanticEventType);
+    }
+
+    private void DispatchSemanticEvent(string semanticEventType, JsonElement message)
+    {
+        switch (semanticEventType)
+        {
+            case "task_complete":
+                HandleTaskComplete(message);
+                break;
+            case "agent_message":
+                HandleAgentMessageEvent(message);
+                break;
+            case "agent_message_delta":
+                HandleAgentMessageDelta(message);
+                break;
+            case "raw_response_item":
+                HandleRawResponseItem(message);
+                break;
         }
     }
 

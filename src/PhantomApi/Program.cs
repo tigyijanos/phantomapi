@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Json.Schema;
+using CodexCliExecutionResult = (string RawResponse, string? SessionId);
+using RuntimeProfile = (string Model, string ReasoningEffort, string? ServiceTier);
 
 var builder = WebApplication.CreateBuilder(args);
 var repoRoot = RepoRootLocator.Resolve(
@@ -62,7 +65,7 @@ var defaultProfile = ResolveRuntimeProfile(phantomOptions, phantomOptions.FastMo
 
 if (string.IsNullOrWhiteSpace(phantomOptions.CliArgumentsTemplate))
 {
-    phantomOptions.CliArgumentsTemplate = BuildCliArgumentsTemplate(phantomOptions, defaultProfile);
+    phantomOptions.CliArgumentsTemplate = CodexCliExecutor.BuildCliArgumentsTemplate(defaultProfile);
 }
 
 if (phantomOptions.CliTimeoutSeconds <= 0)
@@ -85,19 +88,21 @@ var appServerClient = phantomOptions.UseWarmAppServer
     ? new CodexAppServerClient(phantomOptions, repoRoot, traceLogger)
     : null;
 
-builder.Services.AddSingleton(new PhantomStartupWork(
-    appServerClient,
-    PrimeWarmRuntimeAsync: async cancellationToken =>
-    {
-        if (appServerClient is null || !phantomOptions.UseWarmAppServer)
-        {
-            return;
-        }
+var app = builder.Build();
 
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (appServerClient is null || !phantomOptions.UseWarmAppServer)
+    {
+        return;
+    }
+
+    _ = Task.Run(async () =>
+    {
         var correlationId = $"startup_{Guid.NewGuid():N}";
         try
         {
-            await appServerClient.PrimeAsync(defaultProfile, correlationId, cancellationToken);
+            await appServerClient.PrimeAsync(defaultProfile, correlationId, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -117,8 +122,12 @@ builder.Services.AddSingleton(new PhantomStartupWork(
                     ["serviceTier"] = defaultProfile.ServiceTier ?? "default"
                 });
         }
-    },
-    WarmConfiguredEndpointsAsync: cancellationToken => WarmConfiguredEndpointsAsync(
+    });
+});
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(() => WarmConfiguredEndpointsAsync(
         repoRoot,
         defaultProfile,
         phantomOptions,
@@ -127,10 +136,13 @@ builder.Services.AddSingleton(new PhantomStartupWork(
         endpointContractCache,
         execSessionPool,
         cliArgumentsTemplateWasProvided,
-        cancellationToken)));
-builder.Services.AddHostedService<PhantomStartupHostedService>();
+        CancellationToken.None));
+});
 
-var app = builder.Build();
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    _ = appServerClient?.DisposeAsync().AsTask();
+});
 
 app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancellationToken) =>
 {
@@ -225,7 +237,6 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
                 ["routeKey"] = $"{appId}:{endpoint}"
             });
 
-        var responseContractJson = resolvedContract.ResponseContractJson;
         await traceLogger.WriteEventAsync(
             correlationId,
             appId,
@@ -238,8 +249,7 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
             {
                 ["routeKey"] = resolvedContract.RouteKey,
                 ["cacheHit"] = resolvedContract.CacheHit,
-                ["sourcePath"] = resolvedContract.SourcePath.Replace('\\', '/'),
-                ["outputSchemaDerived"] = resolvedContract.OutputSchemaWasDerived
+                ["sourcePath"] = resolvedContract.SourcePath.Replace('\\', '/')
             });
 
         var fastMode = await TraceStepAsyncResult(
@@ -307,6 +317,37 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
             ? BuildExecSessionKey(appId, endpoint, runtimeProfile, instructionBundle)
             : null;
 
+        Task<string> ExecuteColdAsync()
+        {
+            return TraceStepAsyncResult(
+                traceLogger,
+                correlationId,
+                appId,
+                endpoint,
+                "codex.exec.cold",
+                () => InvokeCliAsync(
+                    phantomOptions,
+                    runtimeProfile,
+                    repoRoot,
+                    rawRequest,
+                    cancellationToken,
+                    traceLogger,
+                    correlationId,
+                    appId,
+                    endpoint,
+                    instructionBundle,
+                    execSessionKey,
+                    execSessionPool,
+                    cliArgumentsTemplateWasProvided),
+                null,
+                new()
+                {
+                    ["mode"] = "cold",
+                    ["model"] = runtimeProfile.Model,
+                    ["reasoningEffort"] = runtimeProfile.ReasoningEffort
+                });
+        }
+
         string cliRawResponse;
         try
         {
@@ -341,64 +382,12 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
                         detail: "warm execution failed, falling back to cold execution",
                         metadata: new() { ["error"] = Truncate(ex.Message, 240) });
 
-                    cliRawResponse = await TraceStepAsyncResult(
-                        traceLogger,
-                        correlationId,
-                        appId,
-                        endpoint,
-                        "codex.exec.cold",
-                        () => InvokeCliAsync(
-                            phantomOptions,
-                            runtimeProfile,
-                            repoRoot,
-                            rawRequest,
-                            cancellationToken,
-                            traceLogger,
-                            correlationId,
-                            appId,
-                            endpoint,
-                            instructionBundle,
-                            execSessionKey,
-                            execSessionPool,
-                            cliArgumentsTemplateWasProvided),
-                        null,
-                        new()
-                        {
-                            ["mode"] = "cold",
-                            ["model"] = runtimeProfile.Model,
-                            ["reasoningEffort"] = runtimeProfile.ReasoningEffort
-                        });
+                    cliRawResponse = await ExecuteColdAsync();
                 }
             }
             else
             {
-                cliRawResponse = await TraceStepAsyncResult(
-                    traceLogger,
-                    correlationId,
-                    appId,
-                    endpoint,
-                    "codex.exec.cold",
-                    () => InvokeCliAsync(
-                        phantomOptions,
-                        runtimeProfile,
-                        repoRoot,
-                        rawRequest,
-                        cancellationToken,
-                        traceLogger,
-                        correlationId,
-                        appId,
-                        endpoint,
-                        instructionBundle,
-                        execSessionKey,
-                        execSessionPool,
-                        cliArgumentsTemplateWasProvided),
-                    null,
-                    new()
-                    {
-                        ["mode"] = "cold",
-                        ["model"] = runtimeProfile.Model,
-                        ["reasoningEffort"] = runtimeProfile.ReasoningEffort
-                    });
+                cliRawResponse = await ExecuteColdAsync();
             }
         }
         catch (Exception ex)
@@ -418,23 +407,28 @@ app.MapPost("/dynamic-api", async (HttpRequest request, CancellationToken cancel
 
         using var cliResponseCleanup = cliResponse;
 
-        var contractMatch = await TraceStepAsyncResult(
+        var schemaValidation = await TraceStepAsyncResult(
             traceLogger,
             correlationId,
             appId,
             endpoint,
-            "response.contract-match",
+            "response.schema-validate",
             () =>
             {
-                var match = MatchesContract(resolvedContract.ResponseContract, cliResponse.RootElement, "$", out var contractError);
-                return Task.FromResult((match, contractError));
+                var evaluation = resolvedContract.OutputSchema.Evaluate(
+                    cliResponse.RootElement,
+                    new EvaluationOptions
+                    {
+                        OutputFormat = OutputFormat.List
+                    });
+                return Task.FromResult((evaluation.IsValid, evaluation));
             },
             null,
             new() { ["path"] = "/dynamic-api" });
 
-        if (!contractMatch.match)
+        if (!schemaValidation.IsValid)
         {
-            return BuildProblem("CLI response failed the hard guard.", contractMatch.contractError, 502);
+            return BuildProblem("CLI response failed the hard guard.", BuildSchemaValidationError(schemaValidation.evaluation), 502);
         }
 
         await traceLogger.WriteEventAsync(
@@ -631,6 +625,21 @@ static async Task WarmConfiguredEndpointsAsync(
     foreach (var target in configuredWarmStarts)
     {
         var correlationId = $"warmstart_{Guid.NewGuid():N}";
+        Task WriteWarmStartSkipAsync(string detail, Dictionary<string, object?>? metadata = null)
+        {
+            metadata ??= new Dictionary<string, object?>();
+            metadata["mode"] = target.WarmStart.Mode;
+            return traceLogger.WriteEventAsync(
+                correlationId,
+                target.AppId,
+                target.Endpoint,
+                "warmstart.exec-session",
+                "skipped",
+                null,
+                detail: detail,
+                metadata: metadata);
+        }
+
         try
         {
             var resolvedContract = await TraceStepAsyncResult(
@@ -679,43 +688,19 @@ static async Task WarmConfiguredEndpointsAsync(
 
             if (execSessionPool is null || !options.UseExecSessionPool)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because the exec session pool is disabled.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because the exec session pool is disabled.");
                 continue;
             }
 
             if (cliArgumentsTemplateWasProvided)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because a custom CliArgumentsTemplate is configured.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because a custom CliArgumentsTemplate is configured.");
                 continue;
             }
 
             if (!target.WarmStart.ReadOnlyWarmup)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because the endpoint is not marked as readonly-safe for startup warmup.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because the endpoint is not marked as readonly-safe for startup warmup.");
                 continue;
             }
 
@@ -723,15 +708,9 @@ static async Task WarmConfiguredEndpointsAsync(
             var existingSession = await execSessionPool.GetAsync(execSessionKey, cancellationToken);
             if (existingSession is not null)
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because a compatible stored session already exists.",
-                    metadata: new()
+                await WriteWarmStartSkipAsync(
+                    "Exec-session warm start skipped because a compatible stored session already exists.",
+                    new()
                     {
                         ["sessionKey"] = execSessionKey,
                         ["sessionId"] = existingSession.SessionId
@@ -741,15 +720,7 @@ static async Task WarmConfiguredEndpointsAsync(
 
             if (string.IsNullOrWhiteSpace(target.WarmStart.WarmupRequest))
             {
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    target.AppId,
-                    target.Endpoint,
-                    "warmstart.exec-session",
-                    "skipped",
-                    null,
-                    detail: "Exec-session warm start skipped because no warmupRequest is configured.",
-                    metadata: new() { ["mode"] = target.WarmStart.Mode });
+                await WriteWarmStartSkipAsync("Exec-session warm start skipped because no warmupRequest is configured.");
                 continue;
             }
 
@@ -880,7 +851,7 @@ static async Task<string> InvokeCliAsync(
                 detail: "Session pool skipped because a custom CliArgumentsTemplate is configured.");
         }
 
-        var directResult = await InvokeCliProcessAsync(
+        var directResult = await CodexCliExecutor.ExecuteAsync(
             options,
             profile,
             workingDirectory,
@@ -888,8 +859,7 @@ static async Task<string> InvokeCliAsync(
             cancellationToken,
             traceLogger,
             correlationId,
-            resumeSessionId: null,
-            allowEarlyTermination: true);
+            resumeSessionId: null);
         return directResult.RawResponse;
     }
 
@@ -906,7 +876,7 @@ static async Task<string> InvokeCliAsync(
             detail: "Session pool key is already in use; using a one-off cold exec instead.",
             metadata: new() { ["sessionKey"] = execSessionKey });
 
-        var busyFallbackResult = await InvokeCliProcessAsync(
+        var busyFallbackResult = await CodexCliExecutor.ExecuteAsync(
             options,
             profile,
             workingDirectory,
@@ -914,8 +884,7 @@ static async Task<string> InvokeCliAsync(
             cancellationToken,
             traceLogger,
             correlationId,
-            resumeSessionId: null,
-            allowEarlyTermination: true);
+            resumeSessionId: null);
         return busyFallbackResult.RawResponse;
     }
 
@@ -939,7 +908,7 @@ static async Task<string> InvokeCliAsync(
 
         try
         {
-            var resumedResult = await InvokeCliProcessAsync(
+            var resumedResult = await CodexCliExecutor.ExecuteAsync(
                 options,
                 profile,
                 workingDirectory,
@@ -947,8 +916,7 @@ static async Task<string> InvokeCliAsync(
                 cancellationToken,
                 traceLogger,
                 correlationId,
-                resumeSessionId: storedSession.SessionId,
-                allowEarlyTermination: true);
+                resumeSessionId: storedSession.SessionId);
             return resumedResult.RawResponse;
         }
         catch (Exception ex) when (LooksLikeInvalidResumeSession(ex.Message))
@@ -984,7 +952,7 @@ static async Task<string> InvokeCliAsync(
             ["bundleHash"] = instructionBundle!.BundleHash
         });
 
-    var freshResult = await InvokeCliProcessAsync(
+    var freshResult = await CodexCliExecutor.ExecuteAsync(
         options,
         profile,
         workingDirectory,
@@ -992,8 +960,7 @@ static async Task<string> InvokeCliAsync(
         cancellationToken,
         traceLogger,
         correlationId,
-        resumeSessionId: null,
-        allowEarlyTermination: false);
+        resumeSessionId: null);
 
     if (!string.IsNullOrWhiteSpace(freshResult.SessionId))
     {
@@ -1027,223 +994,6 @@ static async Task<string> InvokeCliAsync(
     return freshResult.RawResponse;
 }
 
-static async Task<CodexCliExecutionResult> InvokeCliProcessAsync(
-    PhantomOptions options,
-    RuntimeProfile profile,
-    string workingDirectory,
-    string rawRequest,
-    CancellationToken cancellationToken,
-    TraceLogger traceLogger,
-    string correlationId,
-    string? resumeSessionId,
-    bool allowEarlyTermination)
-{
-    var stopwatch = Stopwatch.StartNew();
-    var outputPath = Path.Combine(Path.GetTempPath(), $"phantomapi-{Guid.NewGuid():N}.json");
-    var arguments = resumeSessionId is null
-        ? TokenizeArguments(BuildCliArgumentsTemplate(options, profile).Replace("{output}", QuoteArgument(outputPath)))
-        : BuildResumeCliArguments(profile, outputPath, resumeSessionId);
-
-    var startInfo = new ProcessStartInfo
-    {
-        FileName = options.CliCommand,
-        WorkingDirectory = workingDirectory,
-        RedirectStandardInput = true,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-    };
-
-    foreach (var argument in arguments)
-    {
-        startInfo.ArgumentList.Add(argument);
-    }
-
-    using var process = new Process { StartInfo = startInfo };
-    var processStarted = false;
-    try
-    {
-        if (!process.Start())
-        {
-            throw new InvalidOperationException("Failed to start the CLI process.");
-        }
-
-        processStarted = true;
-
-        await traceLogger.WriteEventAsync(
-            correlationId,
-            null,
-            null,
-            "codex.exec.cold.start",
-            "success",
-            null,
-            metadata: new()
-            {
-                ["model"] = profile.Model,
-                ["reasoningEffort"] = profile.ReasoningEffort,
-                ["serviceTier"] = profile.ServiceTier ?? "default",
-                ["resumeSessionId"] = resumeSessionId,
-                ["allowEarlyTermination"] = allowEarlyTermination
-            });
-
-        await process.StandardInput.WriteAsync(rawRequest);
-        await process.StandardInput.FlushAsync(cancellationToken);
-        process.StandardInput.Close();
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.CliTimeoutSeconds));
-        var waitForExitTask = process.WaitForExitAsync(timeoutCts.Token);
-        var waitForOutputTask = WaitForOutputFileAsync(outputPath, timeoutCts.Token);
-        string? earlyOutput = null;
-
-        try
-        {
-            var completedTask = await Task.WhenAny(waitForExitTask, waitForOutputTask);
-            if (completedTask == waitForOutputTask)
-            {
-                earlyOutput = await waitForOutputTask;
-                await traceLogger.WriteEventAsync(
-                    correlationId,
-                    null,
-                    null,
-                    "codex.exec.cold.output-ready",
-                    "success",
-                    stopwatch.ElapsedMilliseconds,
-                    metadata: new()
-                    {
-                        ["rawResponseLength"] = earlyOutput.Length,
-                        ["resumeSessionId"] = resumeSessionId
-                    });
-
-                if (allowEarlyTermination && !process.HasExited)
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-
-            await waitForExitTask;
-        }
-        catch (OperationCanceledException)
-        {
-            if (!process.HasExited)
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                }
-            }
-
-            var partialStdout = (await stdoutTask).Trim();
-            var partialStderr = (await stderrTask).Trim();
-            var timeoutDetail = BuildCliTimeoutDetail(partialStdout, partialStderr);
-            throw new TimeoutException(timeoutDetail is null
-                ? $"CLI call timed out after {options.CliTimeoutSeconds} seconds."
-                : $"CLI call timed out after {options.CliTimeoutSeconds} seconds. {timeoutDetail}");
-        }
-
-        var stdout = (await stdoutTask).Trim();
-        var stderr = (await stderrTask).Trim();
-
-        string rawResponse;
-        if (!string.IsNullOrWhiteSpace(earlyOutput))
-        {
-            rawResponse = earlyOutput;
-            TryDeleteFile(outputPath);
-        }
-        else if (File.Exists(outputPath))
-        {
-            rawResponse = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
-            TryDeleteFile(outputPath);
-        }
-        else
-        {
-            rawResponse = stdout;
-        }
-
-        if (string.IsNullOrWhiteSpace(earlyOutput) && process.ExitCode != 0)
-        {
-            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail) ? $"CLI exited with code {process.ExitCode}." : detail);
-        }
-
-        if (string.IsNullOrWhiteSpace(rawResponse))
-        {
-            throw new InvalidOperationException("CLI returned an empty response.");
-        }
-
-        var parsedSessionId = TryParseSessionId(stdout, stderr);
-        await traceLogger.WriteEventAsync(
-            correlationId,
-            null,
-            null,
-            "codex.exec.cold.complete",
-            "success",
-            stopwatch.ElapsedMilliseconds,
-            metadata: new()
-            {
-                ["exitCode"] = process.ExitCode,
-                ["rawResponseLength"] = rawResponse.Length,
-                ["resumeSessionId"] = resumeSessionId,
-                ["parsedSessionId"] = parsedSessionId
-            });
-
-        return new CodexCliExecutionResult(rawResponse, parsedSessionId);
-    }
-    catch (Exception ex)
-    {
-        var result = processStarted ? "failed" : "failed-to-start";
-        await traceLogger.WriteEventAsync(
-            correlationId,
-            null,
-            null,
-            "codex.exec.cold.complete",
-            result,
-            stopwatch.ElapsedMilliseconds,
-            detail: ex.Message,
-            error: ex.Message,
-            exception: ex,
-            metadata: new()
-            {
-                ["processStarted"] = processStarted,
-                ["resumeSessionId"] = resumeSessionId
-            });
-
-        throw;
-    }
-}
-
-static List<string> BuildResumeCliArguments(RuntimeProfile profile, string outputPath, string sessionId)
-{
-    return
-    [
-        "--dangerously-bypass-approvals-and-sandbox",
-        "exec",
-        "resume",
-        "-m",
-        profile.Model,
-        "-c",
-        $"model_reasoning_effort={profile.ReasoningEffort}",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        outputPath,
-        sessionId,
-        "-"
-    ];
-}
-
 static string BuildExecSessionKey(string appId, string endpoint, RuntimeProfile profile, CompiledInstructionBundle instructionBundle)
 {
     return string.Join(
@@ -1254,17 +1004,6 @@ static string BuildExecSessionKey(string appId, string endpoint, RuntimeProfile 
         profile.ReasoningEffort,
         profile.ServiceTier ?? "default",
         instructionBundle.BundleHash);
-}
-
-static string? TryParseSessionId(string stdout, string stderr)
-{
-    var combined = string.IsNullOrWhiteSpace(stderr)
-        ? stdout
-        : $"{stdout}\n{stderr}";
-    var match = Regex.Match(combined, @"session id:\s*([0-9a-fA-F-]{36})", RegexOptions.IgnoreCase);
-    return match.Success
-        ? match.Groups[1].Value
-        : null;
 }
 
 static bool LooksLikeInvalidResumeSession(string message)
@@ -1282,148 +1021,6 @@ static bool LooksLikeInvalidResumeSession(string message)
             || message.Contains("missing", StringComparison.OrdinalIgnoreCase));
 }
 
-static List<string> TokenizeArguments(string commandLine)
-{
-    var tokens = new List<string>();
-    var current = new StringBuilder();
-    var inQuotes = false;
-
-    foreach (var character in commandLine)
-    {
-        if (character == '"')
-        {
-            inQuotes = !inQuotes;
-            continue;
-        }
-
-        if (char.IsWhiteSpace(character) && !inQuotes)
-        {
-            if (current.Length > 0)
-            {
-                tokens.Add(current.ToString());
-                current.Clear();
-            }
-
-            continue;
-        }
-
-        current.Append(character);
-    }
-
-    if (current.Length > 0)
-    {
-        tokens.Add(current.ToString());
-    }
-
-    return tokens;
-}
-
-static string QuoteArgument(string value)
-{
-    return value.Contains(' ') ? $"\"{value}\"" : value;
-}
-
-static string BuildCliArgumentsTemplate(PhantomOptions options, RuntimeProfile profile)
-{
-    var arguments = new List<string>
-    {
-        "--dangerously-bypass-approvals-and-sandbox",
-        "exec",
-        "-m",
-        profile.Model,
-        "-c",
-        $"model_reasoning_effort={profile.ReasoningEffort}",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        "{output}",
-        "-"
-    };
-
-    return string.Join(' ', arguments.Select(QuoteArgument));
-}
-
-static string? BuildCliTimeoutDetail(string stdout, string stderr)
-{
-    var candidate = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-    if (string.IsNullOrWhiteSpace(candidate))
-    {
-        return null;
-    }
-
-    var lastLine = candidate
-        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .LastOrDefault();
-
-    if (string.IsNullOrWhiteSpace(lastLine))
-    {
-        return null;
-    }
-
-    return $"Last CLI activity: {Truncate(lastLine, 240)}";
-}
-
-static async Task<string> WaitForOutputFileAsync(string outputPath, CancellationToken cancellationToken)
-{
-    while (!cancellationToken.IsCancellationRequested)
-    {
-        var candidate = TryReadCompletedJsonFile(outputPath);
-        if (!string.IsNullOrWhiteSpace(candidate))
-        {
-            return candidate;
-        }
-
-        await Task.Delay(150, cancellationToken);
-    }
-
-    throw new OperationCanceledException(cancellationToken);
-}
-
-static string? TryReadCompletedJsonFile(string outputPath)
-{
-    if (!File.Exists(outputPath))
-    {
-        return null;
-    }
-
-    try
-    {
-        var raw = File.ReadAllText(outputPath).Trim().Trim('\uFEFF');
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        using var _ = JsonDocument.Parse(raw);
-        return raw;
-    }
-    catch (IOException)
-    {
-        return null;
-    }
-    catch (UnauthorizedAccessException)
-    {
-        return null;
-    }
-    catch (JsonException)
-    {
-        return null;
-    }
-}
-
-static void TryDeleteFile(string path)
-{
-    try
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-    }
-    catch
-    {
-    }
-}
-
 static string Truncate(string value, int maxLength)
 {
     if (value.Length <= maxLength)
@@ -1434,93 +1031,36 @@ static string Truncate(string value, int maxLength)
     return value[..(maxLength - 3)] + "...";
 }
 
-static bool MatchesContract(JsonElement contract, JsonElement response, string path, out string? error)
+static string BuildSchemaValidationError(EvaluationResults evaluation)
 {
-    if (contract.ValueKind == JsonValueKind.Null)
-    {
-        if (response.ValueKind == JsonValueKind.Null)
-        {
-            error = null;
-            return true;
-        }
+    var errors = new List<string>();
+    CollectSchemaErrors(evaluation, errors);
 
-        error = $"{path} must be null, got {response.ValueKind}.";
-        return false;
-    }
-
-    if (contract.ValueKind == JsonValueKind.Object)
-    {
-        if (response.ValueKind != JsonValueKind.Object)
-        {
-            error = $"{path} must be an object, got {response.ValueKind}.";
-            return false;
-        }
-
-        foreach (var contractProperty in contract.EnumerateObject())
-        {
-            if (!response.TryGetProperty(contractProperty.Name, out var responseProperty))
-            {
-                error = $"{path} is missing property '{contractProperty.Name}'.";
-                return false;
-            }
-
-            if (!MatchesContract(contractProperty.Value, responseProperty, $"{path}.{contractProperty.Name}", out error))
-            {
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
-    }
-
-    if (contract.ValueKind == JsonValueKind.Array)
-    {
-        if (response.ValueKind != JsonValueKind.Array)
-        {
-            error = $"{path} must be an array, got {response.ValueKind}.";
-            return false;
-        }
-
-        var itemTemplate = contract.EnumerateArray().FirstOrDefault();
-        foreach (var responseItem in response.EnumerateArray())
-        {
-            if (itemTemplate.ValueKind == JsonValueKind.Undefined)
-            {
-                break;
-            }
-
-            if (!MatchesContract(itemTemplate, responseItem, $"{path}[]", out error))
-            {
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
-    }
-
-    if (!KindsMatch(contract.ValueKind, response.ValueKind))
-    {
-        error = $"{path} type mismatch, expected {contract.ValueKind}, got {response.ValueKind}.";
-        return false;
-    }
-
-    error = null;
-    return true;
+    return errors.Count == 0
+        ? "The response did not match the output schema."
+        : string.Join(" | ", errors.Take(5));
 }
 
-static bool KindsMatch(JsonValueKind expected, JsonValueKind actual)
+static void CollectSchemaErrors(EvaluationResults evaluation, List<string> errors)
 {
-    if (expected is JsonValueKind.True or JsonValueKind.False)
+    if (evaluation.Errors is not null)
     {
-        return actual is JsonValueKind.True or JsonValueKind.False;
+        foreach (var entry in evaluation.Errors)
+        {
+            var location = string.IsNullOrWhiteSpace(evaluation.InstanceLocation.ToString())
+                ? "$"
+                : evaluation.InstanceLocation.ToString();
+            errors.Add($"{location}: {entry.Value}");
+        }
     }
 
-    if (expected == actual)
+    if (evaluation.Details is null)
     {
-        return true;
+        return;
     }
 
-    return false;
+    foreach (var detail in evaluation.Details)
+    {
+        CollectSchemaErrors(detail, errors);
+    }
 }

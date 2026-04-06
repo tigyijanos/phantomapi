@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
+using Json.Schema;
 
 [MemoryDiagnoser]
 public class InstructionBundleCompilerBenchmarks
@@ -59,7 +60,8 @@ public class EndpointContractCacheBenchmarks
 public class EndpointMetadataBenchmarks
 {
     private string _loginMarkdown = null!;
-    private JsonElement _loginContract;
+    private JsonSchema _loginSchema = null!;
+    private JsonElement _sampleResponse;
     private string _repoRoot = null!;
 
     [GlobalSetup]
@@ -68,17 +70,33 @@ public class EndpointMetadataBenchmarks
         _repoRoot = BenchmarkFixture.RepoRoot;
         var endpointPath = Path.Combine(_repoRoot, "instructions", "apps", "task-board", "endpoints", "auth", "login.md");
         _loginMarkdown = File.ReadAllText(endpointPath);
-        using var contractDocument = JsonDocument.Parse("""
+        _loginSchema = JsonSchema.FromText("""
             {
-              "sessionId": "session_123",
-              "user": {
-                "id": "user_1",
-                "name": "Taylor"
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "ok": { "type": "boolean" },
+                "token": { "type": "string" },
+                "userId": { "type": "integer" },
+                "fullName": { "type": "string" },
+                "expiresAt": { "type": "string" },
+                "error": { "type": "string" }
               },
-              "roles": ["admin", "editor"]
+              "required": ["ok", "token", "userId", "fullName", "expiresAt", "error"],
+              "additionalProperties": false
             }
             """);
-        _loginContract = contractDocument.RootElement.Clone();
+        using var responseDocument = JsonDocument.Parse("""
+            {
+              "ok": true,
+              "token": "session_123",
+              "userId": 10,
+              "fullName": "Taylor Example",
+              "expiresAt": "2026-03-15T12:00:00Z",
+              "error": ""
+            }
+            """);
+        _sampleResponse = responseDocument.RootElement.Clone();
     }
 
     [Benchmark(Baseline = true)]
@@ -88,9 +106,10 @@ public class EndpointMetadataBenchmarks
     }
 
     [Benchmark]
-    public string NormalizeResponseExampleToSchema()
+    public bool ValidateResponseAgainstSchema()
     {
-        return JsonSchemaUtilities.NormalizeToSchemaJson(_loginContract);
+        var result = _loginSchema.Evaluate(_sampleResponse);
+        return result.IsValid;
     }
 
     [Benchmark]

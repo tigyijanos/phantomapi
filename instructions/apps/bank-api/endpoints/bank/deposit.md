@@ -26,12 +26,18 @@ Behavior rules:
 
 ```json
 {
-  "ok": true,
-  "userId": 1,
-  "accountNumber": "HU100000000000000000000001",
-  "amount": 200,
-  "balance": 1700,
-  "message": "Deposit completed.",
-  "error": ""
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "userId": { "type": "integer" },
+    "accountNumber": { "type": "string" },
+    "amount": { "type": "number" },
+    "balance": { "type": "number" },
+    "message": { "type": "string" },
+    "error": { "type": "string" }
+  },
+  "required": ["ok", "userId", "accountNumber", "amount", "balance", "message", "error"],
+  "additionalProperties": false
 }
 ```

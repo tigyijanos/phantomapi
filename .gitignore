@@ -425,4 +425,11 @@ FodyWeavers.xsd
 /temp-schema.json
 /data/framework/benchmarks/
 /data/framework/exec-sessions.json
+/data/framework/logs/
+/data/framework/audit/
+/data/framework/metrics/
+/data/framework/requests/
+/data/framework/self-healing/
+/data/framework/incidents/open.json
+/data/framework/traces/
 /data/framework/traces/warm-failures/

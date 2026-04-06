@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Json.Schema;
 
 sealed class EndpointContractCache
 {
@@ -31,17 +32,21 @@ sealed class EndpointContractCache
         }
 
         using var responseContractDocument = JsonDocument.Parse(responseContractJson!);
-        var responseContract = responseContractDocument.RootElement.Clone();
-        var outputSchemaWasDerived = !JsonSchemaUtilities.LooksLikeJsonSchema(responseContract);
-        var outputSchemaJson = JsonSchemaUtilities.NormalizeToSchemaJson(responseContract);
+        var outputSchemaElement = responseContractDocument.RootElement.Clone();
+        if (!LooksLikeJsonSchema(outputSchemaElement))
+        {
+            throw new InvalidOperationException(
+                $"The first json code block in {sourcePath.Replace('\\', '/')} must be valid JSON Schema.");
+        }
+
+        var outputSchemaJson = outputSchemaElement.GetRawText();
+        var outputSchema = JsonSchema.FromText(outputSchemaJson);
 
         var contract = new ResolvedEndpointContract(
             routeKey,
             sourcePath,
-            responseContractJson!,
-            responseContract,
             outputSchemaJson,
-            outputSchemaWasDerived,
+            outputSchema,
             CacheHit: false);
 
         _cache[routeKey] = new CachedContract(fingerprint, contract);
@@ -103,14 +108,28 @@ sealed class EndpointContractCache
         return $"{appId}:{endpoint}";
     }
 
+    private static bool LooksLikeJsonSchema(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        return element.TryGetProperty("$schema", out _)
+            || element.TryGetProperty("type", out _)
+            || element.TryGetProperty("properties", out _)
+            || element.TryGetProperty("items", out _)
+            || element.TryGetProperty("required", out _)
+            || element.TryGetProperty("$defs", out _)
+            || element.TryGetProperty("definitions", out _);
+    }
+
     private sealed record CachedContract(string Fingerprint, ResolvedEndpointContract Contract);
 }
 
 sealed record ResolvedEndpointContract(
     string RouteKey,
     string SourcePath,
-    string ResponseContractJson,
-    JsonElement ResponseContract,
     string OutputSchemaJson,
-    bool OutputSchemaWasDerived,
+    JsonSchema OutputSchema,
     bool CacheHit);
